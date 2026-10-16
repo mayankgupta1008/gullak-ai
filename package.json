@@ -1,0 +1,25 @@
+{
+  "name": "gullak-ai",
+  "version": "1.0.0",
+  "description": "",
+  "main": "index.js",
+  "packageManager": "pnpm@10.33.0",
+  "scripts": {
+    "start:dev": "docker compose up -d --build --renew-anon-volumes --remove-orphans",
+    "stop:dev": "docker compose down",
+    "nuke:dev": "docker compose down -v --remove-orphans",
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/mayankgupta1008/gullak-ai.git"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "type": "commonjs",
+  "bugs": {
+    "url": "https://github.com/mayankgupta1008/gullak-ai/issues"
+  },
+  "homepage": "https://github.com/mayankgupta1008/gullak-ai#readme"
+}
