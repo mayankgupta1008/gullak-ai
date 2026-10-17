@@ -55,6 +55,43 @@ type SarvamSessionConfig = {
   agentVariables: Record<string, string>;
 };
 
+type ProposalBody = {
+  userId?: unknown;
+  customerName?: unknown;
+  productId?: unknown;
+  cover?: unknown;
+  addTopUp?: unknown;
+  declaredConditions?: unknown;
+  personDetails?: unknown;
+  notes?: unknown;
+};
+
+type PersonDetailsBody = {
+  customerName?: unknown;
+  existingInsurance?: unknown;
+  existingInsurer?: unknown;
+  existingCover?: unknown;
+  existingPolicyNotes?: unknown;
+  adults?: unknown;
+  children?: unknown;
+  eldestAge?: unknown;
+  declaredConditions?: unknown;
+  budgetMonthly?: unknown;
+};
+
+type PersonDetails = {
+  customerName: string;
+  existingInsurance: boolean | null;
+  existingInsurer: string;
+  existingCover: number | null;
+  existingPolicyNotes: string;
+  adults: number | null;
+  children: number | null;
+  eldestAge: number | null;
+  declaredConditions: string;
+  budgetMonthly: number | null;
+};
+
 // Built from the event dataset by scripts/extract_insurance.py
 const data: { today: string; rateCards: RateCard[]; customers: Record<string, Customer> } = JSON.parse(
   readFileSync(new URL("../data/insurance.json", import.meta.url), "utf8"),
@@ -62,6 +99,7 @@ const data: { today: string; rateCards: RateCard[]; customers: Record<string, Cu
 
 // ponytail: one demo call at a time, all in memory; fine for a prototype
 let activeUserId: string | null = null;
+let activePersonDetails: PersonDetails | null = null;
 const activity: object[] = [];
 const log = (type: string, detail: object) => activity.push({ type, at: new Date().toISOString(), ...detail });
 
@@ -134,6 +172,41 @@ function voiceContext(customer: Customer) {
   };
 }
 
+function optionalWholeNumber(value: unknown): number | null {
+  if (value === undefined || value === null || value === "") return null;
+  const number = Number(value);
+  return Number.isInteger(number) ? number : null;
+}
+
+function optionalMoney(value: unknown): number | null {
+  if (value === undefined || value === null || value === "") return null;
+  const number = Number(value);
+  return Number.isFinite(number) && number > 0 ? number : null;
+}
+
+function optionalBoolean(value: unknown): boolean | null {
+  if (typeof value === "boolean") return value;
+  if (typeof value === "string") {
+    const normalised = value.trim().toLowerCase();
+    if (["true", "yes", "haan", "ha", "y"].includes(normalised)) return true;
+    if (["false", "no", "nahin", "nahi", "n"].includes(normalised)) return false;
+  }
+  return null;
+}
+
+function personDetailsContext(details: PersonDetails): string {
+  const existingInsurance =
+    details.existingInsurance === null
+      ? "existing health insurance not answered"
+      : details.existingInsurance
+        ? `has existing health insurance${details.existingInsurer ? ` with ${details.existingInsurer}` : ""}${details.existingCover ? `, cover ${details.existingCover}` : ""}${details.existingPolicyNotes ? `, notes ${details.existingPolicyNotes}` : ""}`
+        : "no existing health insurance";
+  const family = `adults ${details.adults ?? "unknown"}, children ${details.children ?? "unknown"}, eldestAge ${details.eldestAge ?? "unknown"}`;
+  const health = details.declaredConditions ? `declared conditions: ${details.declaredConditions}` : "no declared conditions mentioned";
+  const budget = details.budgetMonthly ? `budgetMonthly ${details.budgetMonthly}` : "budget not answered";
+  return `Buyer ${details.customerName || "name not answered"}; ${existingInsurance}; ${family}; ${health}; ${budget}.`;
+}
+
 // Tool: the agent calls this first on every call (phone, WhatsApp or web) to load who it's talking to.
 // Must stay above /api/customer/:userId.
 app.get("/api/customer/active", (_req, res) => {
@@ -182,20 +255,55 @@ app.post("/api/quotes", (req, res) => {
   res.json({ note: "monthlyCost = daily premium x 30. No quote means the data has no price for it.", quotes });
 });
 
-// Tool: the voice agent calls this after the customer says yes.
-app.post("/api/proposals", async (req, res) => {
-  const userId = String(req.body?.userId ?? activeUserId ?? DEFAULT_USER_ID);
-  const customer = data.customers[userId];
-  if (!customer) {
-    res.status(400).json({ error: "unknown userId" });
+// Tool: the agent calls this after collecting buyer details, before quoting.
+app.post("/api/person-details", (req, res) => {
+  const body = req.body as PersonDetailsBody;
+  const adults = optionalWholeNumber(body.adults);
+  const children = optionalWholeNumber(body.children);
+  const eldestAge = optionalWholeNumber(body.eldestAge);
+  if (adults === null || children === null || eldestAge === null) {
+    res.status(400).json({ error: "adults, children and eldestAge are required whole numbers" });
     return;
   }
+
+  activePersonDetails = {
+    customerName: String(body.customerName ?? "").trim(),
+    existingInsurance: optionalBoolean(body.existingInsurance),
+    existingInsurer: String(body.existingInsurer ?? "").trim(),
+    existingCover: optionalMoney(body.existingCover),
+    existingPolicyNotes: String(body.existingPolicyNotes ?? "").trim(),
+    adults,
+    children,
+    eldestAge,
+    declaredConditions: String(body.declaredConditions ?? "").trim(),
+    budgetMonthly: optionalMoney(body.budgetMonthly),
+  };
+
+  const context = personDetailsContext(activePersonDetails);
+  log("person_details", { personDetails: activePersonDetails, context });
+  res.json({ status: "saved", personDetails: activePersonDetails, message_to_llm: context });
+});
+
+app.get("/api/person-details/active", (_req, res) => {
+  res.json({ personDetails: activePersonDetails, message_to_llm: activePersonDetails ? personDetailsContext(activePersonDetails) : "" });
+});
+
+// Tool: the voice agent calls this after the customer says yes.
+app.post("/api/proposals", async (req, res) => {
+  const body = req.body as ProposalBody;
+  const productId = String(body.productId ?? "").trim();
+  const cover = Number(body.cover);
+  if (!productId || !Number.isFinite(cover)) {
+    res.status(400).json({ error: "productId and cover are required" });
+    return;
+  }
+  const customerName = String(body.customerName ?? "").trim() || "customer";
   const reference = `EZP-${randomInt(100000, 1000000)}`;
   const whatsappSent = await sendWhatsApp(
-    `✅ ezpolicy: proposal ${reference} submitted for ${customer.name}.\n${req.body?.notes ?? ""}\n` +
+    `ezpolicy: proposal ${reference} submitted for ${customerName}.\n${body.notes ?? ""}\n` +
       "Demo prototype: any new cover is subject to the insurer's approval.",
   );
-  log("proposal", { ...req.body, userId, reference, whatsappSent });
+  log("proposal", { productId, cover, addTopUp: Boolean(body.addTopUp), reference, whatsappSent, personDetails: activePersonDetails });
   res.status(201).json({ reference, status: "submitted", whatsappSent });
 });
 
@@ -204,34 +312,41 @@ app.post("/api/call", (_req, res) => {
   res.status(410).json({ error: "Outbound phone calls are disabled. Use the in-app Sarvam voice session." });
 });
 
-// Starts a voice session inside the page: picks the customer tools will load and returns non-secret Sarvam config.
+// Starts a new-buyer voice session inside the page. Customer facts are collected by the agent, not preloaded.
 app.post("/api/session", (req, res) => {
   const requestedUserId = String(req.body?.userId ?? "");
-  const customer = requestedUserId ? data.customers[requestedUserId] : data.customers[activeUserId ?? DEFAULT_USER_ID];
-  if (!customer) {
+  const customer = requestedUserId ? data.customers[requestedUserId] : null;
+  if (requestedUserId && !customer) {
     res.status(400).json({ error: "unknown customer" });
     return;
   }
   try {
-    activeUserId = customer.userId;
+    activeUserId = customer?.userId ?? null;
+    activePersonDetails = null;
     activity.length = 0;
     log("call", { channel: "app" });
 
     const version = Number(process.env.SARVAM_AGENT_VERSION);
+    const sessionId = customer?.userId ?? `new-buyer-${Date.now().toString(36)}-${randomInt(1000, 10000)}`;
     const config: SarvamSessionConfig = {
       orgId: requiredEnv("SARVAM_ORG_ID"),
       workspaceId: requiredEnv("SARVAM_WORKSPACE_ID"),
       appId: requiredEnv("SARVAM_APP_ID"),
       version: Number.isInteger(version) && version > 0 ? version : undefined,
-      userIdentifier: customer.userId,
+      userIdentifier: sessionId,
       agentVariables: {
-        user_id: customer.userId,
-        customer_name: customer.name,
+        user_id: customer?.userId ?? "",
+        customer_name: customer?.name ?? "",
         today: data.today,
-        adults: String(customer.adults),
-        children: String(customer.children),
-        eldestAge: String(customer.eldestAge),
-        ...voiceContext(customer),
+        adults: customer ? String(customer.adults) : "",
+        children: customer ? String(customer.children) : "",
+        eldestAge: customer ? String(customer.eldestAge) : "",
+        purchase_mode: customer ? "existing_customer" : "new_purchase",
+        customer_summary: customer ? voiceContext(customer).customer_summary : "",
+        member_summary: customer ? voiceContext(customer).member_summary : "",
+        current_policy_summary: customer ? voiceContext(customer).current_policy_summary : "",
+        quote_summary: customer ? voiceContext(customer).quote_summary : "",
+        customer_profile: customer ? voiceContext(customer).customer_profile : "",
       },
     };
     res.json(config);

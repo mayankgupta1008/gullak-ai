@@ -1,6 +1,6 @@
 # ezpolicy
 
-A browser voice agent that helps a family review health insurance before the next 30-day cover cycle. It asks what changed in health, family and budget, recommends cover using real event-dataset prices, and submits the proposal the customer agrees to.
+A browser voice agent that helps a person buy medical health insurance. It asks for name, existing health insurance if any, family members to cover, eldest age, health declarations and budget, saves a structured buyer profile JSON, recommends cover using real event-dataset prices, and submits the proposal the customer agrees to.
 
 Built for the **Bachatt x Digia Voice AI Buildathon** (Fintech track), 17 Oct 2026, Gurugram.
 
@@ -11,22 +11,22 @@ Built for the **Bachatt x Digia Voice AI Buildathon** (Fintech track), 17 Oct 20
 | Step | State |
 | --- | --- |
 | 1. Extract insurance data from the event zip | Done: `scripts/extract_insurance.py` writes `backend/data/insurance.json` |
-| 2. Backend API: customer, quotes, proposals, activity | Done: implemented in `backend/src/index.ts`; quote/proposal logic kept provider-neutral; `/api/session` can start from the configured active customer without exposing customer details in the UI |
-| 3. Sarvam browser voice integration | Done in code: `frontend/src/BrowserCall.tsx` uses `sarvam-conv-ai-sdk/browser`; `POST /api/session` returns non-secret Sarvam session config plus preloaded customer/policy/quote context; `/api/sarvam/*` proxies signed-URL requests with `SARVAM_API_KEY` server-side |
-| 4. Sarvam dashboard agent and tools | Done: Sarvam MCP configured `ezpolicy` app `ezpolicy-4ae97723-494f`, committed version `5`, Hindi+English support, Hinglish support voice, preloaded-context prompt that explicitly confirms family members and pre-existing disease/hospitalisation, and API tools `get_customer_context`, `get_quotes`, `submit_proposal`; `.env` pins the app/version |
-| 5. Frontend home page and live activity | Done: phone opens the Vite/ngrok URL, starts a voice check-in, and the same frontend ngrok URL forwards `/api/*` to the backend for Sarvam tools; the visible UI has no customer picker and does not hardcode customer names or personal details |
+| 2. Backend API: profile, quotes, proposals, activity | Done: implemented in `backend/src/index.ts`; `/api/session` starts a new-purchase session without preloading any old customer record; `/api/person-details` stores the buyer's structured profile JSON for the current call |
+| 3. Sarvam browser voice integration | Done in code: `frontend/src/BrowserCall.tsx` uses `sarvam-conv-ai-sdk/browser`; `POST /api/session` returns non-secret Sarvam session config with empty customer variables for a new buyer; `/api/sarvam/*` proxies signed-URL requests with `SARVAM_API_KEY` server-side |
+| 4. Sarvam dashboard agent and tools | Done: Sarvam MCP configured `ezpolicy` app `ezpolicy-4ae97723-494f`, committed version `9`, Hindi+English support, Hinglish support voice, intro asks the buyer's first name immediately, new-purchase prompt that asks existing health insurance separately from pre-existing disease, saves buyer JSON, then quotes; active API tools are `save_person_details`, `get_quotes`, `submit_new_proposal`; `.env` pins the app/version |
+| 5. Frontend home page and live activity | Done: phone opens the Vite/ngrok URL, starts a voice check-in, and the same frontend ngrok URL forwards `/api/*` to the backend for Sarvam tools; the visible UI has no customer picker, does not hardcode customer names or personal details, and keeps the call button in `End call` mode while a browser session is active |
 | 6. End-to-end voice test | Pending live browser voice test with real Sarvam runtime; committed Sarvam agent version now exists |
 
 ## How the demo works
 
-1. The page shows one start button for the customer’s health cover check-in.
+1. The page shows one start button for a health cover purchase call.
 2. The phone opens the app through HTTPS, usually `ngrok http 5173`.
-3. Tapping **Start voice check-in** calls `POST /api/session`; the backend selects the active customer and returns Sarvam org/workspace/app IDs plus preloaded `agentVariables`, never the API key.
+3. Tapping **Start voice check-in** calls `POST /api/session`; the backend starts a new buyer session and returns Sarvam org/workspace/app IDs plus empty customer `agentVariables`, never the API key.
 4. The Sarvam browser SDK requests a signed WebSocket URL through `/api/sarvam/*`; the backend forwards to Sarvam and injects `SARVAM_API_KEY`.
-5. The Sarvam agent talks in Hindi or English. It uses preloaded customer/policy/quote facts on the normal path, and only calls backend API tools through the frontend ngrok URL's `/api` proxy when needed:
-   - `get_customer_context` -> `GET /api/customer/active/voice-context`
-   - `get_quotes` -> `POST /api/quotes` when family details change or preloaded quotes are missing
-   - `submit_proposal` -> `POST /api/proposals`
+5. The Sarvam agent talks in Hindi or English. It asks for the buyer's details, saves the structured buyer profile JSON, then calls backend API tools through the frontend ngrok URL's `/api` proxy:
+   - `save_person_details` -> `POST /api/person-details`
+   - `get_quotes` -> `POST /api/quotes`
+   - `submit_new_proposal` -> `POST /api/proposals`
 6. The page polls `GET /api/activity` and shows quote/proposal activity live.
 
 ```text
@@ -63,7 +63,7 @@ Tables used: `insurance_products`, `premium_rate_cards`, `policies`, `applicatio
 - "Today" in the data is **2026-10-14**; member ages are computed as of that date.
 - Self-check: 583 of 586 active policies reproduce their actual premium from the rate card.
 
-The frontend does not expose customer names, IDs, policy details or a profile picker. The backend attaches the configured active customer to the voice session and sends the relevant facts to Sarvam as session variables.
+The frontend does not expose customer names, IDs, policy details or a profile picker. A blank `POST /api/session` starts a new-buyer voice session; the agent collects the buyer's details during the call. Existing health insurance and pre-existing disease are separate fields because confusing them produces bad advice.
 
 ## API
 
@@ -71,11 +71,13 @@ The frontend does not expose customer names, IDs, policy details or a profile pi
 | --- | --- | --- |
 | `GET /api/health` | | `{ status }` |
 | `GET /api/customer/:userId` | | profile: members, adults, children, eldestAge, policies, today |
-| `GET /api/customer/active` | | profile for the current browser voice session; defaults to the configured active customer |
-| `GET /api/customer/active/voice-context` | | compact `message_to_llm` profile for Sarvam fallback tool |
+| `GET /api/customer/active` | | legacy profile route; not used by the new-purchase Sarvam agent |
+| `GET /api/customer/active/voice-context` | | legacy compact profile route; not used by the new-purchase Sarvam agent |
+| `POST /api/person-details` | `{ customerName, existingInsurance, existingInsurer?, existingCover?, existingPolicyNotes?, adults, children, eldestAge, declaredConditions?, budgetMonthly? }` | Saves current-call buyer profile JSON and returns `message_to_llm` context |
+| `GET /api/person-details/active` | | Current-call buyer profile JSON, for debugging |
 | `POST /api/quotes` | `{ adults, children, eldestAge, budgetMonthly? }` | `{ note, quotes[] }`; each quote has productId, insurer, productType, cadence, cover, premium, deductible, monthlyCost, withinBudget |
-| `POST /api/proposals` | `{ userId?, productId, cover, addTopUp, declaredConditions?, notes? }` | `{ reference: "EZP-xxxxxx", status, whatsappSent }` |
-| `POST /api/session` | `{ userId? }` | Sarvam session config: `orgId`, `workspaceId`, `appId`, optional `version`, `userIdentifier`, `agentVariables`; blank body uses the configured active customer |
+| `POST /api/proposals` | `{ customerName?, productId, cover, addTopUp, declaredConditions?, notes? }` | `{ reference: "EZP-xxxxxx", status, whatsappSent }` |
+| `POST /api/session` | `{ userId? }` | Sarvam session config: `orgId`, `workspaceId`, `appId`, optional `version`, `userIdentifier`, empty customer `agentVariables`; blank body starts a new-buyer session |
 | `/api/sarvam/*` | Sarvam browser SDK signed-URL request | Proxies to `SARVAM_RUNTIME_BASE` and injects `SARVAM_API_KEY` |
 | `POST /api/call` | | Gone for practical purposes: returns 410 because outbound telephony is disabled |
 | `GET /api/activity` | | events for the current voice session: `call`, `quotes`, `proposal` |
@@ -118,7 +120,8 @@ docker compose up -d --force-recreate backend
 
 - Medical health insurance only. No term/life insurance. No HDFC or other insurers because there are no prices in the data.
 - Every price, cover and deductible the agent says must come from `get_quotes` or the customer profile.
-- Never say "renewal": policies run on 30-day AutoPay cycles, so this is a "cycle check-in".
+- Existing health insurance means an already-held health policy or employer cover; pre-existing disease means a medical condition. Keep them separate everywhere.
+- Never say "renewal": this voice path is a new medical-policy purchase flow.
 - The agent never predicts illness or gives medical advice.
 - Prototype state is in memory and supports one active voice session at a time.
 - Backend is Node 24 native TypeScript: relative imports need `.ts` extensions; erasable syntax only.

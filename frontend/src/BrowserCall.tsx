@@ -32,24 +32,28 @@ const stateText: Record<AgentState, string> = {
 export function BrowserCall({ onStarted }: Props) {
   const agentRef = useRef<ConversationAgent | null>(null)
   const [state, setState] = useState<AgentState>(AgentState.IDLE)
+  const [callActive, setCallActive] = useState(false)
   const [error, setError] = useState('')
   const [lastTranscript, setLastTranscript] = useState('')
-  const live = state !== AgentState.IDLE && state !== AgentState.ERROR
+  const live = callActive || Boolean(agentRef.current)
 
   useEffect(() => {
     return () => {
       void agentRef.current?.stop().catch(() => undefined)
       agentRef.current = null
+      setCallActive(false)
     }
   }, [])
 
   async function stop() {
     await agentRef.current?.stop()
     agentRef.current = null
+    setCallActive(false)
     setState(AgentState.IDLE)
   }
 
   async function start() {
+    if (live) return
     setError('')
     setLastTranscript('')
     setState(AgentState.CONNECTING)
@@ -93,20 +97,26 @@ export function BrowserCall({ onStarted }: Props) {
         transcriptCallback: async (msg: ServerTranscriptMsg) => {
           setLastTranscript(`${msg.role}: ${msg.content}`)
         },
-        startCallback: async () => onStarted(),
+        startCallback: async () => {
+          setCallActive(true)
+        },
         endCallback: async () => {
           agentRef.current = null
+          setCallActive(false)
           setState(AgentState.IDLE)
         },
       })
 
       agentRef.current = agent
+      setCallActive(true)
       await agent.start()
       const connected = await agent.waitForConnect(10)
       if (!connected) throw new Error('Sarvam voice session timed out')
+      onStarted()
     } catch (err) {
       await agentRef.current?.stop().catch(() => undefined)
       agentRef.current = null
+      setCallActive(false)
       setState(AgentState.ERROR)
       setError(err instanceof Error ? err.message : 'Could not start the call. Allow microphone access and try again.')
     }
