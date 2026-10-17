@@ -1,4 +1,4 @@
-# Gullak — Health Insurance Renewal & Advisor Voice Agent
+# ezpolicy — Health Insurance Renewal & Advisor Voice Agent
 
 Design doc · 17 Oct 2026 · Bachatt × Digia Voice AI Buildathon (Fintech track)
 Status: **draft for approval — nothing built yet**
@@ -10,7 +10,7 @@ Families on pay-as-you-go health cover (premium debited daily or monthly by UPI 
 - **Buying:** they pick a plan without matching it to their family, ages, health history and budget.
 - **Renewal, or after a health change:** they let the policy lapse, or switch to a "better" plan, without knowing that a fresh policy treats a known condition as pre-existing (waiting period up to 3 years) and throws away the continuity they have built.
 
-Gullak is a voice agent (Hindi or English) that:
+ezpolicy is a voice agent (Hindi or English) that:
 
 1. **Renewal call (main demo):** "calls" the customer as their policy cycle ends, asks what changed (new diagnosis, new family member, budget), and recommends renew / raise cover / add top-up / switch, with every price taken from the data. It then fills and submits the renewal + top-up proposal on screen.
 2. **Pre-purchase advisor (stretch):** the user calls in; the agent asks about family, ages, health and budget, and recommends a plan.
@@ -40,7 +40,7 @@ Handbook fit: "Act for me" problem space; idea-library item "Catches the renewal
 
 - The agent states a premium, cover amount, deductible or rule that did not come from a tool, the profile or the rules sheet.
 - The agent predicts disease ("you may get cancer") or gives medical advice.
-- The agent recommends switching insurer after a diagnosis without warning about the fresh waiting period.
+- The agent recommends a fresh policy after a diagnosis without explaining waiting-period risk, or implies that valid portability necessarily loses continuity credits.
 - Long monologues, or a voice that can't be interrupted.
 - Any real personal data in the demo.
 
@@ -88,7 +88,7 @@ Sample prices, 2 adults + 2 children: Care, eldest 46–50: ₹70 / ₹86 / ₹9
 **Demo customers** (both on Care Health daily base cover, current cycle 16 Sep – 15 Oct):
 
 - **Abhishek Chopra** — primary. `user_id 1590824686249448`, Ahmedabad. Self (born 1993) + spouse Payal (born 1994; diabetes and heart surgery, since 2010). Cover ₹5L at ₹41/day.
-  Story: his ₹5L base cover lines up exactly with the top-up's ₹5L deductible, so adding the ₹10L super top-up (2 adults, eldest 18–35: ₹275/month) gives ₹15L of protection. Switching to ICICI would put Payal's conditions on a fresh waiting period.
+  Story: his ₹5L base cover lines up exactly with the top-up's ₹5L deductible, so adding the ₹10L super top-up (2 adults, eldest 18–35: ₹275/month) creates a nominal ₹15L base-plus-top-up structure, subject to underwriting, waiting periods and policy terms; it is not a promise of immediate ₹15L claim eligibility. Buying a fresh ICICI policy can introduce fresh waiting periods for Payal's conditions; valid portability can preserve eligible waiting-period credit. Never imply that every insurer switch resets continuity.
 - **Lalit Deshpande** — backup, and proof it works for anyone. `user_id 1706244642983364`, Tiruvallur. Self (born 1979; heart surgery and organ replacement, since 2010), spouse Simran, children Vivaan (2023) and Sakshi (2012). Cover only ₹1L at ₹70/day.
   Story: a top-up alone won't help, because its ₹5L deductible sits above his ₹1L base and leaves a ₹4L gap the family pays. Raise the base to ₹5L (₹99/day) first.
 
@@ -103,7 +103,7 @@ Express backend (:5001)
   POST /api/proposals         → stores the submitted proposal in memory, returns a reference
         ▲   Vite proxies /api → :5001
 Browser (:5173)
-  "Gullak calling…" screen → @elevenlabs/react session with dynamic variables
+  "ezpolicy calling…" screen → @elevenlabs/react session with dynamic variables
   live transcript · quotes table · proposal card that fills during the call
         ▲
 ElevenLabs agent (configured in the dashboard)
@@ -117,16 +117,16 @@ ElevenLabs agent (configured in the dashboard)
 - **`POST /api/quotes`** with `{ adults, children, eldestAge, budgetMonthly?, includeTopUp? }` returns every matching rate-card row as `{ productId, insurer, productType, cadence, cover, premium, monthlyCost, deductible, withinBudget }`, sorted by `monthlyCost`.
   - Daily → monthly = premium × 30; say so in the response.
   - No matching row for a combination → return nothing for it. Never interpolate.
-- **`POST /api/proposals`** with `{ userId, productId, cover, addTopUp, declaredConditions, notes }` returns `{ reference: "GUL-" + 6 digits, status: "submitted" }` and keeps the proposal in an in-memory array. This is the "something got done" in the demo.
+- **`POST /api/proposals`** with `{ userId, productId, cover, addTopUp, declaredConditions, notes }` returns `{ reference: "EZP-" + 6 digits, status: "submitted" }` and keeps the proposal in an in-memory array. This is the "something got done" in the demo.
 
 ### Agent (ElevenLabs dashboard)
 
 - **Dynamic variables** at session start: `customer_name`, `today` (2026-10-14), `mode` (`renewal` | `new`), `cycle_end`, `customer_profile` (the `/api/customer` JSON).
-- **First message (renewal), e.g.:** "Namaste {{customer_name}} ji, main Gullak hoon. Aapki health policy {{cycle_end}} ko renew hone wali hai — do minute baat kar sakte hain?"
+- **First message (renewal), e.g.:** "Namaste {{customer_name}} ji, main ezpolicy hoon. Aapki health policy {{cycle_end}} ko renew hone wali hai — do minute baat kar sakte hain?"
 - **Prompt rules:**
   - Never state a price, cover or deductible unless it came from `get_quotes` or the profile. Never do arithmetic; `get_quotes` already returns monthly cost.
   - Before recommending, ask at most three things: anything newly diagnosed or any hospital stay; any change in family (new child, parents to add); monthly budget.
-  - If anyone has a condition (old or new), explain continuity before any switch: a fresh policy treats it as pre-existing (wait up to 3 years); continuous cover builds toward the 5-year moratorium; lapsing beyond the grace period can break continuity.
+  - If anyone has a condition (old or new), explain continuity before any switch: a fresh policy may apply a PED waiting period (up to 3 years under the referenced framework); valid portability can preserve eligible credits. Never infer continuous insured years from `ped_since` or the current billing cycle. Explain moratorium or grace only from reviewed, applicable rules.
   - Explain the top-up deductible whenever the base cover is below it.
   - Never predict illness; no medical advice. This is guidance, not a sale; any new cover is subject to the insurer's acceptance.
   - Say the final choice out loud, call `fill_proposal`, read back the summary, and call `submit_proposal` only after an explicit yes.
@@ -143,27 +143,27 @@ ElevenLabs agent (configured in the dashboard)
 ### Frontend
 
 - One page.
-  - Left: incoming-call card ("Gullak calling…", customer name, Accept / Decline). On accept, fetch `/api/customer/:id` and start the ElevenLabs session with the dynamic variables. Show status, a speaking indicator and the live transcript.
+  - Left: incoming-call card ("ezpolicy calling…", customer name, Accept / Decline). On accept, fetch `/api/customer/:id` and start the ElevenLabs session with the dynamic variables. Show status, a speaking indicator and the live transcript.
   - Right: quotes table (after `get_quotes`), proposal card (filled by `fill_proposal`), confirmation badge with the reference (after `submit_proposal`).
 - A switcher between the two demo customers (shows it is not hard-coded).
 - Add `server.proxy: { '/api': 'http://localhost:5001' }` to `vite.config.ts`. Agent ID from `VITE_ELEVENLABS_AGENT_ID` in `frontend/.env.local` (already gitignored).
 
-## 6. Rules sheet (knowledge-base text)
+## 6. Provisional rules sheet (review before knowledge-base upload)
 
-Sources are secondary summaries of IRDAI's Master Circular on Health Insurance Business (29 May 2024); verify against the circular if time allows. Item 7 comes from the event's insurance data.
+Sources are secondary summaries of IRDAI's Master Circular on Health Insurance Business (29 May 2024). Review the primary circular, applicability and subsequent amendments before using these as current guidance. Item 7 needs evidence from additional event tables; it is not established by the five-table import. See the implementation companion for evidence limitations.
 
 1. **Pre-existing disease (PED) waiting period:** at most 3 years (it was 4). A condition that exists before a new policy starts is a PED for that policy.
 2. **Moratorium:** after 5 continuous years of cover (it was 8), the insurer can't contest a claim for non-disclosure, except proven fraud and permanent exclusions in the policy.
 3. **Portability:** moving insurer through portability carries waiting-period credit, and the old insurer's years count toward the moratorium. Buying a fresh policy instead does not.
-4. **Grace period:** 15 days for monthly premiums, 30 days for other modes. Renewing within the grace period keeps continuity benefits (waiting-period credit, no-claim bonus). After a lapse, the insurer may ask for a fresh proposal and health declaration.
+4. **Grace period:** The referenced framework describes 15 days for monthly instalments and 30 days for quarterly, half-yearly or annual instalments. Do not map a daily AutoPay debit to a policy instalment frequency or invent a daily-product grace period. Confirm the actual policy terms before giving a deadline or promising cover during a missed payment.
 5. **Super top-up:** pays only once the year's bills cross the deductible (₹5L here). If the base cover is smaller than the deductible, the family pays the bills between the two.
 6. **Raising cover:** any increase (higher base cover or a new top-up) is new cover. The insurer may underwrite it, and waiting periods usually apply afresh to the increase. Declare all conditions.
-7. **This product:** cancelling AutoPay while premiums are unpaid gets the customer blocked from buying again (`insurance_eligibility_blocks`, `receivables`).
+7. **Unverified product rule — omit from the agent until checked:** the original design claims cancelling AutoPay while premiums are unpaid blocks repurchase. This requires validation against `insurance_eligibility_blocks` and `receivables`; those tables are outside the five-table import.
 
 ## 7. Demo (3 minutes, live; a judge plays Abhishek)
 
-- **0:00–0:20 — who it's for:** "Families on pay-as-you-go health cover lose years of waiting-period credit when a renewal slips or they switch in a hurry. Gullak calls first."
-- **0:20–2:20 — the call:** the agent opens on the renewal and asks what changed. The judge mentions a health change or a budget. The agent pulls quotes, says not to switch (Payal's conditions would wait up to 3 years with a new insurer), and recommends renewing plus the ₹10L top-up at ₹275/month for ₹15L in total. The judge agrees.
+- **0:00–0:20 — who it's for:** "Families on pay-as-you-go health cover lose years of waiting-period credit when a renewal slips or they switch in a hurry. ezpolicy calls first."
+- **0:20–2:20 — the call:** the agent opens on the renewal and asks what changed. The judge mentions a health change or a budget. The agent pulls quotes, distinguishes fresh-purchase risk from portability credits, and recommends renewal plus considering the ₹10L top-up at ₹275/month if affordable. It explains that the nominal ₹15L structure is subject to underwriting and new-cover waiting periods. The judge chooses an option and explicitly approves mock submission after readback.
 - **2:20–3:00 — what got done:** the proposal card filled live and the reference number.
 - **If it breaks:** say what should have happened and move on.
 - **Backup:** screen recording of one full successful call, made by 2:50 PM.
@@ -180,7 +180,7 @@ Sources are secondary summaries of IRDAI's Master Circular on Health Insurance B
 
 Solo: same order, one person.
 
-**Cut order if behind:** pre-purchase mode → customer switcher → Hindi → proposal card (stop at Level 2: quotes + recommendation).
+**Cut order if behind (final fallback below the full acceptance target):** pre-purchase mode → customer switcher → Hindi → proposal card (stop at Level 2: quotes + recommendation).
 
 **Stretch (only if Level 3 works by 2:15):** pre-purchase mode (`mode=new`: the agent asks family, ages, health and budget, then calls `get_quotes`); insurer brochure PDFs in the knowledge base (mentor OK first).
 
@@ -198,3 +198,7 @@ Solo: same order, one person.
 - "Today" inside the agent = 14 Oct 2026.
 - Primary demo customer = Abhishek Chopra; backup = Lalit Deshpande.
 - Public ElevenLabs agent; extracted data gitignored; Docker and WAHA unused for the demo.
+
+## 11. Implementation companion
+
+See [the detailed implementation plan](../plans/2026-10-17-ezpolicy-implementation-plan.md) for file ownership, API contracts, server calculations, agent tools, build phases and acceptance checks. This design remains a proposal; dataset figures above have not been revalidated in this checkout. The ZIP is currently missing at the documented location.
