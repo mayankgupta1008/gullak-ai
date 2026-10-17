@@ -3,6 +3,8 @@ services:
     build:
       context: .
       dockerfile: frontend/Dockerfile
+    depends_on:
+      - backend
     environment:
       - NODE_ENV=development
       - API_PROXY_TARGET=http://backend:5001

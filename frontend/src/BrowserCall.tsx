@@ -8,7 +8,7 @@ import {
   type ServerTranscriptMsg,
 } from 'sarvam-conv-ai-sdk/browser'
 
-type Props = { userId: string; onStarted: () => void }
+type Props = { onStarted: () => void }
 type SessionConfig = {
   orgId: string
   workspaceId: string
@@ -29,7 +29,7 @@ const stateText: Record<AgentState, string> = {
 }
 
 // Live voice call inside our page. The phone opens the HTTPS app; Sarvam handles voice over WebSocket.
-export function BrowserCall({ userId, onStarted }: Props) {
+export function BrowserCall({ onStarted }: Props) {
   const agentRef = useRef<ConversationAgent | null>(null)
   const [state, setState] = useState<AgentState>(AgentState.IDLE)
   const [error, setError] = useState('')
@@ -60,7 +60,7 @@ export function BrowserCall({ userId, onStarted }: Props) {
       const response = await fetch('/api/session', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ userId }),
+        body: JSON.stringify({}),
       })
       const session = await response.json().catch(() => null) as SessionConfig | SessionError | null
       if (!response.ok || !session) {
@@ -115,7 +115,7 @@ export function BrowserCall({ userId, onStarted }: Props) {
   return (
     <div className="call-feedback" aria-live="polite">
       <button type="button" className="button" onClick={live ? () => void stop() : () => void start()}>
-        {live ? 'End call' : 'Talk to ezpolicy now'}
+        {live ? 'End call' : 'Start voice check-in'}
       </button>
       <p>{error || lastTranscript || stateText[state]}</p>
     </div>

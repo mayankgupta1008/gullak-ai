@@ -11,21 +11,21 @@ Built for the **Bachatt x Digia Voice AI Buildathon** (Fintech track), 17 Oct 20
 | Step | State |
 | --- | --- |
 | 1. Extract insurance data from the event zip | Done: `scripts/extract_insurance.py` writes `backend/data/insurance.json` |
-| 2. Backend API: customer, quotes, proposals, activity | Done: implemented in `backend/src/index.ts`; quote/proposal logic kept provider-neutral |
-| 3. Sarvam browser voice integration | Done in code: `frontend/src/BrowserCall.tsx` uses `sarvam-conv-ai-sdk/browser`; `POST /api/session` returns non-secret Sarvam session config; `/api/sarvam/*` proxies signed-URL requests with `SARVAM_API_KEY` server-side |
-| 4. Sarvam dashboard agent and tools | Pending user setup: create agent, paste prompt/rules from `agent/setup.md`, configure `get_customer`, `get_quotes`, `submit_proposal`, then paste Sarvam IDs into `.env` |
-| 5. Frontend home page and live activity | Done: phone opens the Vite/ngrok URL, taps "Talk to ezpolicy now", and `GET /api/activity` shows tool activity |
-| 6. End-to-end voice test | Pending real Sarvam credentials and a committed Sarvam agent version |
+| 2. Backend API: customer, quotes, proposals, activity | Done: implemented in `backend/src/index.ts`; quote/proposal logic kept provider-neutral; `/api/session` can start from the configured active customer without exposing customer details in the UI |
+| 3. Sarvam browser voice integration | Done in code: `frontend/src/BrowserCall.tsx` uses `sarvam-conv-ai-sdk/browser`; `POST /api/session` returns non-secret Sarvam session config plus preloaded customer/policy/quote context; `/api/sarvam/*` proxies signed-URL requests with `SARVAM_API_KEY` server-side |
+| 4. Sarvam dashboard agent and tools | Done: Sarvam MCP configured `ezpolicy` app `ezpolicy-4ae97723-494f`, committed version `5`, Hindi+English support, Hinglish support voice, preloaded-context prompt that explicitly confirms family members and pre-existing disease/hospitalisation, and API tools `get_customer_context`, `get_quotes`, `submit_proposal`; `.env` pins the app/version |
+| 5. Frontend home page and live activity | Done: phone opens the Vite/ngrok URL, starts a voice check-in, and the same frontend ngrok URL forwards `/api/*` to the backend for Sarvam tools; the visible UI has no customer picker and does not hardcode customer names or personal details |
+| 6. End-to-end voice test | Pending live browser voice test with real Sarvam runtime; committed Sarvam agent version now exists |
 
 ## How the demo works
 
-1. The page shows a demo customer picker.
+1. The page shows one start button for the customer’s health cover check-in.
 2. The phone opens the app through HTTPS, usually `ngrok http 5173`.
-3. Tapping **Talk to ezpolicy now** calls `POST /api/session`; the backend selects the active customer and returns Sarvam org/workspace/app IDs, never the API key.
+3. Tapping **Start voice check-in** calls `POST /api/session`; the backend selects the active customer and returns Sarvam org/workspace/app IDs plus preloaded `agentVariables`, never the API key.
 4. The Sarvam browser SDK requests a signed WebSocket URL through `/api/sarvam/*`; the backend forwards to Sarvam and injects `SARVAM_API_KEY`.
-5. The Sarvam agent talks in Hindi or English and calls backend API tools through the backend ngrok URL:
-   - `get_customer` -> `GET /api/customer/active`
-   - `get_quotes` -> `POST /api/quotes`
+5. The Sarvam agent talks in Hindi or English. It uses preloaded customer/policy/quote facts on the normal path, and only calls backend API tools through the frontend ngrok URL's `/api` proxy when needed:
+   - `get_customer_context` -> `GET /api/customer/active/voice-context`
+   - `get_quotes` -> `POST /api/quotes` when family details change or preloaded quotes are missing
    - `submit_proposal` -> `POST /api/proposals`
 6. The page polls `GET /api/activity` and shows quote/proposal activity live.
 
@@ -36,7 +36,7 @@ Phone browser (Vite :5173 over HTTPS)
   -> /api/sarvam/* proxy -> Sarvam signed WebSocket
 
 Sarvam API tools
-  -> backend ngrok URL
+  -> frontend ngrok URL /api proxy
   -> /api/customer/active, /api/quotes, /api/proposals
 ```
 
@@ -63,10 +63,7 @@ Tables used: `insurance_products`, `premium_rate_cards`, `policies`, `applicatio
 - "Today" in the data is **2026-10-14**; member ages are computed as of that date.
 - Self-check: 583 of 586 active policies reproduce their actual premium from the rate card.
 
-Demo customers:
-
-- `1590824686249448` **Abhishek Chopra**: self 33, spouse Payal 32 (diabetes and heart surgery since 2010). Care Rs 5L at Rs 41/day = Rs 1,230/month. ICICI Rs 5L is Rs 1,206/month; the Rs 10L top-up is Rs 275/month.
-- `1706244642983364` **Lalit Deshpande**: family of 4; self 46 (heart surgery and organ replacement since 2010). Care Rs 1L at Rs 70/day, which is below the top-up's Rs 5L deductible.
+The frontend does not expose customer names, IDs, policy details or a profile picker. The backend attaches the configured active customer to the voice session and sends the relevant facts to Sarvam as session variables.
 
 ## API
 
@@ -74,10 +71,11 @@ Demo customers:
 | --- | --- | --- |
 | `GET /api/health` | | `{ status }` |
 | `GET /api/customer/:userId` | | profile: members, adults, children, eldestAge, policies, today |
-| `GET /api/customer/active` | | profile for the current browser voice session; defaults to Abhishek |
+| `GET /api/customer/active` | | profile for the current browser voice session; defaults to the configured active customer |
+| `GET /api/customer/active/voice-context` | | compact `message_to_llm` profile for Sarvam fallback tool |
 | `POST /api/quotes` | `{ adults, children, eldestAge, budgetMonthly? }` | `{ note, quotes[] }`; each quote has productId, insurer, productType, cadence, cover, premium, deductible, monthlyCost, withinBudget |
 | `POST /api/proposals` | `{ userId?, productId, cover, addTopUp, declaredConditions?, notes? }` | `{ reference: "EZP-xxxxxx", status, whatsappSent }` |
-| `POST /api/session` | `{ userId }` | Sarvam session config: `orgId`, `workspaceId`, `appId`, optional `version`, `userIdentifier`, `agentVariables` |
+| `POST /api/session` | `{ userId? }` | Sarvam session config: `orgId`, `workspaceId`, `appId`, optional `version`, `userIdentifier`, `agentVariables`; blank body uses the configured active customer |
 | `/api/sarvam/*` | Sarvam browser SDK signed-URL request | Proxies to `SARVAM_RUNTIME_BASE` and injects `SARVAM_API_KEY` |
 | `POST /api/call` | | Gone for practical purposes: returns 410 because outbound telephony is disabled |
 | `GET /api/activity` | | events for the current voice session: `call`, `quotes`, `proposal` |
@@ -108,13 +106,7 @@ ngrok http 5173
 
 Open the Vite ngrok URL on the phone. Microphone access requires HTTPS; localhost is only enough for laptop testing.
 
-For Sarvam API tools, expose the backend too:
-
-```bash
-ngrok http 5001
-```
-
-Paste that backend HTTPS URL into the Sarvam API tools defined in `agent/setup.md`.
+For Sarvam API tools, use the same frontend ngrok URL with `/api/...` paths. Example: `https://tricksome-christa-conjugated.ngrok-free.dev/api/customer/active`. Add header `ngrok-skip-browser-warning: true` in Sarvam tools if headers are supported.
 
 After editing `.env`, run:
 

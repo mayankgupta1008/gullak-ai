@@ -4,7 +4,7 @@ import { BrowserCall } from './BrowserCall'
 
 type Topic = 'family' | 'health' | 'budget'
 type Language = 'en' | 'hi'
-type Activity = { type: string; at?: string; reference?: string; customer?: string; quotes?: unknown[] }
+type Activity = { type: string; at?: string; reference?: string; quotes?: unknown[] }
 const topics: { id: Topic; en: string; hi: string }[] = [
   { id: 'family', en: 'Our family', hi: 'हमारा परिवार' },
   { id: 'health', en: 'Our health', hi: 'हमारी सेहत' },
@@ -34,7 +34,6 @@ function App() {
   const [language, setLanguage] = useState<Language>('en')
   const [product, setProduct] = useState(0)
   const [stage, setStage] = useState(0)
-  const [customer, setCustomer] = useState('1590824686249448')
   const [callState, setCallState] = useState<'idle' | 'started'>('idle')
   const [events, setEvents] = useState<Activity[]>([])
   const [activityError, setActivityError] = useState(false)
@@ -112,7 +111,7 @@ function App() {
           </div>
         </section>
         <section className="faq-section section" id="questions" aria-labelledby="faq-title"><div className="faq-heading"><h2 id="faq-title" data-reveal>Before<br />we talk.</h2><p data-reveal>A few things you<br />might want to know.</p></div><div className="faq-list">{faqs.map(([question, answer]) => <details key={question} name="questions" data-reveal><summary>{question}<span aria-hidden="true" className="faq-plus">+</span></summary><p>{answer}</p></details>)}</div></section>
-        <section className="checkin-section section" id="check-in" aria-labelledby="checkin-title"><div className="closing-copy"><h2 id="checkin-title" data-reveal>Your next<br />check-in.</h2><p data-reveal>A familiar voice.<br />A little more clarity about your cover.</p><a href="#preview" className="text-link" data-reveal>Explore the conversation preview</a></div><form className="call-form" data-ui data-reveal onSubmit={event => event.preventDefault()}><div className="fragment-top"><span>Try the voice agent</span><Mark /></div><h3>Let’s start with you.</h3><p>Choose an event-demo profile for the call.</p><label htmlFor="customer">Demo customer</label><select id="customer" value={customer} disabled={callState === 'started'} onChange={event => setCustomer(event.target.value)}><option value="1590824686249448">Abhishek Chopra</option><option value="1706244642983364">Lalit Deshpande</option></select><p className="form-note">Tap “Talk to ezpolicy now”, allow your microphone, and talk in Hindi or English.</p><BrowserCall userId={customer} onStarted={() => { setEvents([]); setCallState('started') }} /><div className="call-feedback" aria-live="polite">{callState === 'started' && <><p>Call in progress. What the agent does appears below.</p><ul>{events.map((event, index) => <li key={index}>{event.type === 'proposal' ? `Proposal submitted: ${event.reference ?? 'reference pending'}` : event.type === 'quotes' ? `${event.quotes?.length ?? 0} cover options retrieved` : event.type === 'call' ? `Check-in started${event.customer ? ` for ${event.customer}` : ''}` : 'Check-in activity updated'}</li>)}</ul>{activityError && <p>Activity updates are unavailable. The voice session may still be in progress.</p>}<button type="button" className="text-link" onClick={() => setCallState('idle')}>Close call activity</button></>}</div></form></section>
+        <section className="checkin-section section" id="check-in" aria-labelledby="checkin-title"><div className="closing-copy"><h2 id="checkin-title" data-reveal>Your next<br />check-in.</h2><p data-reveal>A familiar voice.<br />A little more clarity about your cover.</p><a href="#preview" className="text-link" data-reveal>Explore the conversation preview</a></div><form className="call-form" data-ui data-reveal onSubmit={event => event.preventDefault()}><div className="fragment-top"><span>Voice check-in</span><Mark /></div><h3>Start your health cover check-in.</h3><p>Talk in Hindi or English. The agent will ask about family members, health declarations and monthly budget.</p><p className="form-note">Tap “Start voice check-in”, allow your microphone, and answer naturally.</p><BrowserCall onStarted={() => { setEvents([]); setCallState('started') }} /><div className="call-feedback" aria-live="polite">{callState === 'started' && <><p>Call in progress. What the agent does appears below.</p><ul>{events.map((event, index) => <li key={index}>{event.type === 'proposal' ? `Proposal submitted: ${event.reference ?? 'reference pending'}` : event.type === 'quotes' ? `${event.quotes?.length ?? 0} cover options retrieved` : event.type === 'call' ? 'Check-in started' : 'Check-in activity updated'}</li>)}</ul>{activityError && <p>Activity updates are unavailable. The voice session may still be in progress.</p>}<button type="button" className="text-link" onClick={() => setCallState('idle')}>Close call activity</button></>}</div></form></section>
       </main>
       <footer><a className="brand" href="#"><Mark />ezpolicy.</a><span>Health cover, in your words.</span><a href="#questions">About this prototype</a><span>© {new Date().getFullYear()} ezpolicy</span></footer>
     </>

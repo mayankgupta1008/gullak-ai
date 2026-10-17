@@ -16,7 +16,36 @@ type RateCard = {
   deductible: number;
 };
 
-type Customer = { userId: string; name: string; policies: { cycleEnd: string }[] };
+type Member = {
+  name: string;
+  relationship: string;
+  age: number;
+  conditions: string[];
+  conditionsSince: number | null;
+};
+
+type Policy = {
+  policyId: string;
+  productId: string;
+  insurer: string;
+  productType: string;
+  cadence: "daily" | "monthly";
+  cover: number;
+  premium: number;
+  cycleEnd: string;
+  deductible?: number;
+};
+
+type Customer = {
+  userId: string;
+  name: string;
+  members: Member[];
+  adults: number;
+  children: number;
+  eldestAge: number;
+  policies: Policy[];
+};
+
 type SarvamSessionConfig = {
   orgId: string;
   workspaceId: string;
@@ -58,7 +87,12 @@ app.get("/api/health", (_req, res) => {
   res.json({ status: "ok" });
 });
 
-const DEFAULT_USER_ID = "1590824686249448"; // Abhishek Chopra, primary demo customer
+const CONFIGURED_DEMO_USER_IDS = (process.env.DEMO_USER_IDS ?? "1590824686249448,1706244642983364")
+  .split(",")
+  .map((id) => id.trim())
+  .filter(Boolean);
+const DEMO_USER_IDS = CONFIGURED_DEMO_USER_IDS.filter((id) => data.customers[id]);
+const DEFAULT_USER_ID = DEMO_USER_IDS[0] ?? Object.keys(data.customers)[0];
 const SARVAM_RUNTIME_BASE = process.env.SARVAM_RUNTIME_BASE ?? "https://apps.sarvam.ai/api/app-runtime/";
 
 function requiredEnv(name: string): string {
@@ -67,12 +101,52 @@ function requiredEnv(name: string): string {
   return value;
 }
 
+function customerProfile(customer: Customer) {
+  return { today: data.today, ...customer };
+}
+
+function voiceContext(customer: Customer) {
+  const policy = customer.policies[0];
+  const quoteSummary = data.rateCards
+    .filter((r) => r.adults === customer.adults && r.children === customer.children && r.ageMin <= customer.eldestAge && customer.eldestAge <= r.ageMax)
+    .map((r) => {
+      const monthlyCost = r.cadence === "daily" ? r.premium * 30 : r.premium;
+      return `${r.productId}: ${r.insurer} ${r.productType} cover ${r.cover} deductible ${r.deductible} monthlyCost ${monthlyCost}`;
+    })
+    .sort()
+    .join("; ");
+  const memberSummary = customer.members
+    .map((member) => {
+      const conditions = member.conditions.length ? ` conditions ${member.conditions.join(", ")}` : " no declared conditions";
+      const since = member.conditionsSince ? ` since ${member.conditionsSince}` : "";
+      return `${member.name} ${member.relationship} age ${member.age}${conditions}${since}`;
+    })
+    .join("; ");
+  const policySummary = policy
+    ? `${policy.insurer} ${policy.productType} cover ${policy.cover} premium ${policy.premium} ${policy.cadence} cycleEnd ${policy.cycleEnd}`
+    : "No active policy";
+  return {
+    customer_summary: `${customer.name}; today ${data.today}; adults ${customer.adults}; children ${customer.children}; eldestAge ${customer.eldestAge}; members ${memberSummary}; current policy ${policySummary}`,
+    member_summary: memberSummary,
+    current_policy_summary: policySummary,
+    quote_summary: quoteSummary,
+    customer_profile: JSON.stringify(customerProfile(customer)),
+  };
+}
+
 // Tool: the agent calls this first on every call (phone, WhatsApp or web) to load who it's talking to.
 // Must stay above /api/customer/:userId.
 app.get("/api/customer/active", (_req, res) => {
   const customer = data.customers[activeUserId ?? DEFAULT_USER_ID];
-  if (!activity.length) log("call", { customer: customer.name });
-  res.json({ today: data.today, ...customer });
+  if (!activity.length) log("call", {});
+  res.json(customerProfile(customer));
+});
+
+// Fast voice tool: compact, preformatted facts for the LLM. This avoids making Sarvam infer from a large JSON blob.
+app.get("/api/customer/active/voice-context", (_req, res) => {
+  const customer = data.customers[activeUserId ?? DEFAULT_USER_ID];
+  if (!activity.length) log("call", {});
+  res.json({ message_to_llm: voiceContext(customer).customer_summary, ...customerProfile(customer) });
 });
 
 app.get("/api/customer/:userId", (req, res) => {
@@ -81,7 +155,7 @@ app.get("/api/customer/:userId", (req, res) => {
     res.status(404).json({ error: "customer not found" });
     return;
   }
-  res.json({ today: data.today, ...customer });
+  res.json(customerProfile(customer));
 });
 
 // Tool: the voice agent calls this before saying any price.
@@ -132,15 +206,16 @@ app.post("/api/call", (_req, res) => {
 
 // Starts a voice session inside the page: picks the customer tools will load and returns non-secret Sarvam config.
 app.post("/api/session", (req, res) => {
-  const customer = data.customers[String(req.body?.userId ?? "")];
+  const requestedUserId = String(req.body?.userId ?? "");
+  const customer = requestedUserId ? data.customers[requestedUserId] : data.customers[activeUserId ?? DEFAULT_USER_ID];
   if (!customer) {
-    res.status(400).json({ error: "unknown userId" });
+    res.status(400).json({ error: "unknown customer" });
     return;
   }
   try {
     activeUserId = customer.userId;
     activity.length = 0;
-    log("call", { customer: customer.name, channel: "app" });
+    log("call", { channel: "app" });
 
     const version = Number(process.env.SARVAM_AGENT_VERSION);
     const config: SarvamSessionConfig = {
@@ -153,6 +228,10 @@ app.post("/api/session", (req, res) => {
         user_id: customer.userId,
         customer_name: customer.name,
         today: data.today,
+        adults: String(customer.adults),
+        children: String(customer.children),
+        eldestAge: String(customer.eldestAge),
+        ...voiceContext(customer),
       },
     };
     res.json(config);
