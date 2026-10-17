@@ -253,3 +253,6 @@ __pycache__/
 .openclaude/
 # Event dataset extract (scripts/extract_insurance.py)
 backend/data/
+
+# Playwright MCP screenshots/snapshots
+.playwright-mcp/

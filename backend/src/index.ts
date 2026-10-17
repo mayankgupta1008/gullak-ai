@@ -75,7 +75,7 @@ app.post("/api/proposals", (req, res) => {
     res.status(400).json({ error: "unknown userId" });
     return;
   }
-  const reference = `GUL-${randomInt(100000, 1000000)}`;
+  const reference = `EZP-${randomInt(100000, 1000000)}`;
   log("proposal", { ...req.body, userId, reference });
   res.status(201).json({ reference, status: "submitted" });
 });
@@ -98,7 +98,7 @@ app.post("/api/call", async (req, res) => {
       to_number: process.env.DEMO_PHONE,
       conversation_initiation_client_data: {
         dynamic_variables: {
-          customer_name: customer.name,
+          customer_name: customer.name.split(" ")[0], // "Abhishek ji" sounds natural on a call
           today: data.today,
           cycle_end: cycleEnd,
           customer_profile: JSON.stringify(customer),

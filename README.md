@@ -1,11 +1,11 @@
-# Gullak AI
+# ezpolicy
 
 A voice agent that phones a family about their health insurance before their next cover cycle. It asks what changed (health, family, budget), recommends the right cover using real prices from the event dataset, and submits the change the customer agrees to.
 
 Built for the **Bachatt × Digia Voice AI Buildathon** (Fintech track), 17 Oct 2026, Gurugram.
 Deadlines: build ends **3:00 PM IST**; a basic working demo is submitted by **3:30 PM**; the final five demo live 4–6 PM.
 
-> **Agents picking this up in a new chat:** read this file first, then `docs/superpowers/specs/2026-10-17-gullak-insurance-agent-design.md` (design and decisions) and `agent/setup.md` (agent prompt, tools, phone setup). **Update the Status table after every change.**
+> **Agents picking this up in a new chat:** read this file first, then `docs/superpowers/specs/2026-10-17-ezpolicy-insurance-agent-design.md` (design and decisions) and `agent/setup.md` (agent prompt, tools, phone setup). The implementation plan in `docs/superpowers/plans/` predates the phone-call decision: where it says browser session or client tools, this README wins (Twilio call + webhook tools). **Update the Status table after every change.**
 
 ## Status
 
@@ -15,17 +15,17 @@ Deadlines: build ends **3:00 PM IST**; a basic working demo is submitted by **3:
 | 2. Backend API: customer, quotes, proposals | ✅ tested with curl, typecheck passes |
 | 3. `POST /api/call` (ElevenLabs outbound call via Twilio) + activity log | ✅ code tested; returns 502 until the `.env` keys are set |
 | 4. ElevenLabs agent + Twilio number + ngrok (manual, see `agent/setup.md`) | ⏳ in progress (user) |
-| 5. Frontend home page: responsive ezpolicy design, Hindi/English interactive preview, cover explorer, FAQs, customer picker, demo call and live activity; Vite `/api` proxy | ✅ production build and design source lint pass; browser inspection blocked by sandbox. Root `pnpm dev` runs the home page without `.env`; `.env.example` documents voice credentials; Docker proxy targets backend service |
+| 5. Frontend home page (teammate): responsive ezpolicy design, Hindi/English interactive preview, cover explorer, FAQs, customer picker, demo call and live activity; Vite `/api` proxy | ✅ production build passes. Root `pnpm dev` runs the home page without `.env`; `.env.example` documents voice credentials; Docker proxy targets the backend service |
 | 6. End-to-end test call (Hindi + English), backup video, submit | ⏳ |
 
 ## How the demo works
 
 1. The page shows a demo customer and a **Call** button.
 2. `POST /api/call`: the backend asks ElevenLabs to dial `DEMO_PHONE` (our own phone) from the Twilio number imported into ElevenLabs, passing the customer's profile as dynamic variables.
-3. The ElevenLabs agent "Gullak" (Hindi or English) runs a two-minute **cycle check-in**: new diagnoses, family changes, budget.
+3. The ElevenLabs agent "ezpolicy" (Hindi or English) runs a two-minute **cycle check-in**: new diagnoses, family changes, budget.
 4. During the call it uses webhook tools on our backend through an ngrok HTTPS tunnel:
    - `get_quotes` → `POST /api/quotes` (real premiums from the rate cards)
-   - `submit_proposal` → `POST /api/proposals` (returns a `GUL-xxxxxx` reference)
+   - `submit_proposal` → `POST /api/proposals` (returns a `EZP-xxxxxx` reference)
 5. The page polls `GET /api/activity` and shows the quotes and the proposal reference live.
 
 ```text
@@ -43,9 +43,11 @@ Browser (Vite :5173) ── POST /api/call ──► Express backend (:5001) ─
 | `backend/data/insurance.json` | Extracted dataset; gitignored, rebuild with the script |
 | `scripts/extract_insurance.py` | Reads the event zip, writes `insurance.json`, self-checks prices |
 | `agent/setup.md` | ElevenLabs agent prompt, rules sheet, tool definitions, Twilio and ngrok steps |
-| `frontend/` | React 19 + Vite 8 ezpolicy home page and demo call controls |
-| `docs/superpowers/specs/2026-10-17-gullak-insurance-agent-design.md` | Design doc and decisions |
-| `docker-compose.yaml` | `frontend`, `backend`, and `waha` (unused: WhatsApp is on the handbook skip list) |
+| `frontend/` | React 19 + Vite 8 ezpolicy home page and demo call controls (`src/App.tsx` calls `/api/call`, polls `/api/activity`) |
+| `frontend/vite.config.ts` | Proxies `/api` to `API_PROXY_TARGET` (compose sets `http://backend:5001`; default `http://127.0.0.1:5001`) |
+| `docs/superpowers/plans/2026-10-17-ezpolicy-implementation-plan.md` | Earlier plan for a browser-only call with client tools; superseded by the phone flow in this README |
+| `docs/superpowers/specs/2026-10-17-ezpolicy-insurance-agent-design.md` | Design doc and decisions |
+| `docker-compose.yaml` | `frontend`, `backend`; `waha` (WhatsApp) sits behind the `whatsapp` profile, off by default (handbook skip list) |
 
 ## Data
 
@@ -69,7 +71,7 @@ Demo customers:
 | `GET /api/health` | | `{ status }` |
 | `GET /api/customer/:userId` | | profile: members (age, conditions, conditionsSince), adults, children, eldestAge, policies, today |
 | `POST /api/quotes` | `{ adults, children, eldestAge, budgetMonthly? }` (numbers or numeric strings) | `{ note, quotes[] }`; each quote has productId, insurer, productType, cadence, cover, premium, deductible, monthlyCost (daily × 30), withinBudget; sorted by monthlyCost |
-| `POST /api/proposals` | `{ userId?, productId, cover, addTopUp, declaredConditions?, notes? }`; userId defaults to the active call's customer | `{ reference: "GUL-xxxxxx", status }` |
+| `POST /api/proposals` | `{ userId?, productId, cover, addTopUp, declaredConditions?, notes? }`; userId defaults to the active call's customer | `{ reference: "EZP-xxxxxx", status }` |
 | `POST /api/call` | `{ userId }` | ElevenLabs response (`conversation_id`, …); 502 with ElevenLabs' error if the call fails |
 | `GET /api/activity` | | events for the current call: `call`, `quotes`, `proposal` |
 
@@ -78,7 +80,7 @@ Demo customers:
 | Key | Meaning |
 | --- | --- |
 | `ELEVENLABS_API_KEY` | ElevenLabs API key |
-| `ELEVENLABS_AGENT_ID` | ID of the agent "Gullak" |
+| `ELEVENLABS_AGENT_ID` | ID of the agent "ezpolicy" |
 | `ELEVENLABS_PHONE_NUMBER_ID` | ID of the Twilio number imported into ElevenLabs |
 | `DEMO_PHONE` | Our own phone in E.164 (`+91…`); the only number `/api/call` ever dials |
 | `WAHA_*` | Unused WhatsApp service |
