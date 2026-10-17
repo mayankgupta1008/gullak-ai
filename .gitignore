@@ -251,6 +251,5 @@ __pycache__/
 .playwright-mcp
 .megamemory
 .openclaude/
-
-# Organiser dataset: extracted files must stay local
-/backend/data/
+# Event dataset extract (scripts/extract_insurance.py)
+backend/data/

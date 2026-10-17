@@ -1,7 +1,14 @@
 # ezpolicy — Health Insurance Renewal & Advisor Voice Agent
 
 Design doc · 17 Oct 2026 · Bachatt × Digia Voice AI Buildathon (Fintech track)
-Status: **draft for approval — nothing built yet**
+Status: **approved 12:10 IST; building.**
+
+**Updates after review (12:30 IST) — these override the sections below:**
+
+- **Real phone call, not a browser call.** A button in the page calls `POST /api/call`. The backend asks ElevenLabs to dial `DEMO_PHONE` from `.env` (the only number it ever dials) through a Twilio number imported into ElevenLabs. During a phone call there is no browser in the loop, so `get_quotes` and `submit_proposal` are **webhook (server) tools** that reach the backend through an ngrok tunnel. `fill_proposal` is dropped. The page polls `GET /api/activity` to show the quotes and the proposal reference live. Setup steps, prompt and rules sheet: `agent/setup.md`.
+- **Submission at 3:30 = a basic working demo of the app.**
+- **"Cycle check-in", not "renewal".** All policies are new (June 2026 onwards) and run on 30-day AutoPay cycles, so a cycle end is a billing date. The agent never says "renewal due" and never warns about grace periods or lapses. Read "renewal" below as "cycle check-in"; the grace-period rule is removed from the rules sheet.
+- **Why not switch to ICICI** (₹24/month cheaper for Abhishek): porting keeps waiting-period credit, but the new insurer underwrites afresh and may decline or charge more given Payal's history. That risk isn't worth ₹288 a year. This replaces "lose years of continuity".
 
 ## 1. What and why
 
