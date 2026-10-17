@@ -15,7 +15,7 @@ Deadlines: build ends **3:00 PM IST**; a basic working demo is submitted by **3:
 | 2. Backend API: customer, quotes, proposals | ✅ tested with curl, typecheck passes |
 | 3. `POST /api/call` (ElevenLabs outbound call via Twilio) + activity log | ✅ code tested; returns 502 until the `.env` keys are set |
 | 4. ElevenLabs agent + Twilio number + ngrok (manual, see `agent/setup.md`) | ⏳ in progress (user) |
-| 5. Frontend call page: customer picker, Call button, live activity; Vite `/api` proxy | ⏳ next |
+| 5. Frontend home page: responsive ezpolicy design, Hindi/English interactive preview, cover explorer, FAQs, customer picker, demo call and live activity; Vite `/api` proxy | ✅ production build and design source lint pass; browser inspection blocked by sandbox. Root `pnpm dev` runs the home page without `.env`; `.env.example` documents voice credentials; Docker proxy targets backend service |
 | 6. End-to-end test call (Hindi + English), backup video, submit | ⏳ |
 
 ## How the demo works
@@ -43,7 +43,7 @@ Browser (Vite :5173) ── POST /api/call ──► Express backend (:5001) ─
 | `backend/data/insurance.json` | Extracted dataset; gitignored, rebuild with the script |
 | `scripts/extract_insurance.py` | Reads the event zip, writes `insurance.json`, self-checks prices |
 | `agent/setup.md` | ElevenLabs agent prompt, rules sheet, tool definitions, Twilio and ngrok steps |
-| `frontend/` | React 19 + Vite 8 call page (still the Vite template) |
+| `frontend/` | React 19 + Vite 8 ezpolicy home page and demo call controls |
 | `docs/superpowers/specs/2026-10-17-gullak-insurance-agent-design.md` | Design doc and decisions |
 | `docker-compose.yaml` | `frontend`, `backend`, and `waha` (unused: WhatsApp is on the handbook skip list) |
 
@@ -84,6 +84,17 @@ Demo customers:
 | `WAHA_*` | Unused WhatsApp service |
 
 ## Run
+
+To view the home page, run these commands from `ezpolicy/`:
+
+```bash
+pnpm install
+pnpm dev
+```
+
+Open `http://localhost:5173`. This runs the frontend without Docker or `.env`. The language/topic preview, cover explorer, and FAQs work without the backend. Real demo calls and activity need the configured backend.
+
+For the full Docker voice-call demo, first copy `.env.example` to `.env` and fill in the ElevenLabs IDs, API key and demo phone. Extract the event dataset before starting the backend:
 
 ```bash
 python3 scripts/extract_insurance.py ~/Desktop/buildathon_data.zip   # once: writes backend/data/insurance.json

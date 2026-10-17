@@ -5,6 +5,7 @@ services:
       dockerfile: frontend/Dockerfile
     environment:
       - NODE_ENV=development
+      - API_PROXY_TARGET=http://backend:5001
     volumes:
       - ./frontend:/app/frontend
       - /app/frontend/node_modules
