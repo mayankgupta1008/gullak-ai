@@ -50,7 +50,7 @@ The browser session starts a new-purchase flow. Do not configure customer-record
 
 - Method: `POST`
 - URL: `https://<frontend-ngrok-url>/api/person-details`
-- Description: `Saves the buyer's structured profile JSON after collecting name, existing health insurance, family counts, eldest age, health declarations and budget. Call this before get_quotes.`
+- Description: `Saves the buyer's structured profile JSON after collecting name, detailed family members to cover, eldest age, specific health problems, ongoing treatments, hospitalisation history, existing health insurance, and budget. Call this before quoting.`
 
 Body schema:
 
@@ -58,20 +58,78 @@ Body schema:
 | --- | --- | --- | --- |
 | `customerName` | string | yes | Customer's first name or spoken name |
 | `existingInsurance` | boolean | yes | True if the customer already has any health insurance policy or employer cover |
-| `existingInsurer` | string | no | Existing insurer name, if known |
+| `existingInsurer` | string | no | Existing insurer name, if known (e.g. "Star Health", "New India Assurance", "HDFC ERGO") |
 | `existingCover` | number | no | Existing cover amount in rupees, if known |
-| `existingPolicyNotes` | string | no | Notes such as employer cover, personal policy, unknown cover, or portability interest |
+| `existingPolicyNotes` | string | no | Notes such as employer group cover, personal floater, or portability interest |
 | `adults` | number | yes | Adults to cover |
 | `children` | number | yes | Children to cover |
 | `eldestAge` | number | yes | Age of the eldest covered person |
-| `declaredConditions` | string | no | Any pre-existing disease, ongoing treatment, surgery or hospitalisation mentioned |
+| `coveredMembers` | string | no | Specific relationship breakdown (e.g., "self, spouse, 2 kids, and 62yo mother") |
+| `declaredConditions` | string | no | Specific health conditions/problems (e.g., "diabetes, hypertension, thyroid, asthma") |
+| `ongoingTreatments` | string | no | Any regular medicines or ongoing treatments |
+| `hospitalizationHistory` | string | no | Any past surgeries or hospitalisations in the last 2-3 years |
+| `city` | string | no | City of residence for cashless hospital network checks |
 | `budgetMonthly` | number | no | Comfortable monthly amount in rupees |
+
+### `check_existing_policy`
+
+- Method: `POST`
+- URL: `https://<frontend-ngrok-url>/api/check-existing-policy`
+- Description: `Searches the live web for details of the customer's existing policy, evaluates room rent capping (1% warning), PED waiting periods, 5-year moratorium rights, and whether their current cover is sufficient or needs a Super Top-Up. Call this whenever the customer mentions having an existing personal or corporate policy.`
+
+Body schema:
+
+| name | type | required | description |
+| --- | --- | --- | --- |
+| `insurerName` | string | yes | Insurer name of the existing policy (e.g., "Star Health", "ICICI Lombard", "New India Assurance") |
+| `policyName` | string | no | Specific product or plan name if known (e.g., "Family Health Optima", "iHealth") |
+| `coverAmount` | number | no | Current cover amount in rupees (e.g., 500000) |
+| `yearsActive` | number | no | Number of continuous years the policy has been held |
+| `isEmployerCover` | boolean | no | True if this is an employer corporate group policy |
+
+### `get_policy_advice`
+
+- Method: `POST`
+- URL: `https://<frontend-ngrok-url>/api/policy-advice`
+- Description: `Generates proactive, expert consultative insurance suggestions (e.g., separate senior citizen plan for parents 55+, super top-up for existing policyholders, IRDAI 3-yr PED waiting period advice, room rent warnings). Call this to get actionable advice to suggest to the buyer.`
+
+Body schema:
+
+| name | type | required | description |
+| --- | --- | --- | --- |
+| `adults` | number | yes | Adults to cover |
+| `children` | number | yes | Children to cover |
+| `eldestAge` | number | yes | Age of eldest covered person |
+| `coveredMembers` | string | no | Members covered (e.g. "self, spouse, mother") |
+| `declaredConditions` | string | no | Any pre-existing disease or health problems |
+| `ongoingTreatments` | string | no | Ongoing medications or treatments |
+| `hospitalizationHistory` | string | no | Surgeries or hospitalisations in past 2-3 years |
+| `existingInsurance` | boolean | no | Whether customer holds existing cover |
+| `existingInsurer` | string | no | Existing insurer name |
+| `existingCover` | number | no | Current cover amount in rupees |
+| `budgetMonthly` | number | no | Monthly budget in rupees |
+
+### `search_policies_online`
+
+- Method: `POST`
+- URL: `https://<frontend-ngrok-url>/api/search-policies`
+- Description: `Performs a live web search for health insurance policies across top Indian insurers (Star Health, HDFC ERGO, Niva Bupa, Tata AIG, Care Health, Bajaj Allianz, etc.) tailored to family size, eldest age, and budget. Use this to discover and recommend real market policies beyond the 2 local dataset plans.`
+
+Body schema:
+
+| name | type | required | description |
+| --- | --- | --- | --- |
+| `adults` | number | yes | Adults to cover, 1 or 2 |
+| `children` | number | yes | Children to cover, 0 to 2 |
+| `eldestAge` | number | yes | Age of the eldest covered person |
+| `budgetMonthly` | number | no | Comfortable monthly amount in rupees |
+| `searchTerm` | string | no | Specific insurer or policy keyword to search for (e.g., "Star Health", "Niva Bupa", "HDFC ERGO", "top-up") |
 
 ### `get_quotes`
 
 - Method: `POST`
 - URL: `https://<frontend-ngrok-url>/api/quotes`
-- Description: `Returns real premiums from the price table for a family, sorted by monthly cost. Call this before saying any price.`
+- Description: `Returns real premiums from the local price table for a family, sorted by monthly cost.`
 
 Body schema:
 
@@ -93,27 +151,11 @@ Body schema:
 | name | type | required | description |
 | --- | --- | --- | --- |
 | `customerName` | string | no | Customer's name as spoken in the call |
-| `productId` | string | yes | Product ID of the chosen plan from `get_quotes` |
+| `productId` | string | yes | Product ID of the chosen plan |
 | `cover` | number | yes | Cover amount in rupees of the chosen plan |
-| `addTopUp` | boolean | yes | True if adding the Care Health super top-up |
-| `declaredConditions` | string | no | Any new health conditions the customer mentioned |
+| `addTopUp` | boolean | yes | True if adding a super top-up |
+| `declaredConditions` | string | no | Any health conditions the customer mentioned |
 | `notes` | string | no | One-line summary of what was agreed |
-
-### `search_policies_online`
-
-- Method: `POST`
-- URL: `https://<frontend-ngrok-url>/api/search-policies`
-- Description: `Performs a live web search for health insurance policies across top Indian insurers (Star Health, HDFC ERGO, Niva Bupa, Tata AIG, Care Health, Bajaj Allianz, etc.) tailored to family size, eldest age, and budget. Use this to discover and recommend real market policies beyond the 2 local dataset plans.`
-
-Body schema:
-
-| name | type | required | description |
-| --- | --- | --- | --- |
-| `adults` | number | yes | Adults to cover, 1 or 2 |
-| `children` | number | yes | Children to cover, 0 to 2 |
-| `eldestAge` | number | yes | Age of the eldest covered person |
-| `budgetMonthly` | number | no | Comfortable monthly amount in rupees |
-| `searchTerm` | string | no | Specific insurer or policy keyword to search for (e.g., "Star Health", "Niva Bupa", "HDFC ERGO", "top-up") |
 
 ### `send_quotation_email`
 
@@ -131,7 +173,7 @@ Body schema:
 
 ## 3. Sarvam MCP Server Integration
 
-Add the Sarvam Voice Agents MCP server to your MCP configuration (e.g. `.agents/mcp_config.json`):
+The Sarvam Voice Agents MCP server is registered at:
 
 ```json
 {
@@ -155,61 +197,55 @@ ngrok http 5173
 
 Open the Vite ngrok URL on the phone, tap **Start voice check-in**, allow the microphone, and speak in Hindi or English. The committed version 9 intro should ask for the buyer's first name immediately.
 
-## System prompt
+## System prompt (Real-Person Persona: Priya from ezpolicy)
 
 ```text
-You are ezpolicy's voice assistant, a calm, friendly health-insurance guide for Indian families, on a browser voice call with a person buying medical health insurance. You give guidance, not a sales pitch.
+You are Priya, a senior health insurance advisor at ezpolicy with over 8 years of experience helping Indian families protect themselves against rising medical expenses. You are a real human on a direct phone call, not an AI bot. You speak naturally, warmly, and empathetically, with a genuine desire to protect families from unexpected hospital bills.
 
-## What you know about the customer
-This is a new-purchase flow. The browser session does not preload a real customer name, existing policy, family, or health details. Do not call customer-record tools. Ask the buyer for the details needed to quote.
+## Voice, Personality & Conversational Style
+- You speak fluid, everyday Hinglish—exactly like a helpful, educated advisor in Delhi, Mumbai, or Bengaluru talking to a friend or client.
+- You never use robotic greetings or sound scripted. You use natural conversational fillers: "Haan ji", "Acha samjha", "Bilkul", "Dekhiye...", "Main aapko ek bohot zaroori baat batati hoon".
+- You are consultative, not transactional: You don't fire endless questions like a police interrogation. After the customer shares something, you react naturally, acknowledge their situation, and give thoughtful real-world advice before moving forward.
+- You never announce what you are doing in the background (never say "I am calling the API", "I am running a tool", or "According to my database"). When you need info, you just quietly use your tools (`save_person_details`, `check_existing_policy`, `get_policy_advice`, `search_policies_online`, `submit_new_proposal`, `send_quotation_email`).
+- Keep your speech conversational and punchy: 1 to 2 short, crisp sentences per turn so the customer can talk back easily. Avoid huge paragraphs.
+- Never use bracketed emotions like [cheerful] or [empathetic]. Say numbers the way people speak: "teen sau pachas rupaye mahina", "das lakh ka cover".
 
-Existing health insurance and pre-existing disease are different. Existing health insurance means an already-held personal policy or employer cover. Pre-existing disease means a health condition such as diabetes, BP, surgery, treatment or hospitalisation. Ask both separately.
+## How Priya Conducts the Call
 
-## Why you are talking
-Help the buyer choose a medical health insurance option using their family, health declarations and budget.
+**CRITICAL RULES — follow these exactly:**
+- **Call each tool ONLY ONCE per turn.** Never re-call a tool to confirm or double-check a result. If you already have the data, use it.
+- **ALWAYS call `search_policies_online` before recommending any plan.** This is mandatory. Do NOT use `get_quotes` as a substitute — `get_quotes` is only a fallback if web search fails.
+- **Never recommend a plan without first searching the live market.**
 
-## How to run the call
-1. Greet them and ask their first name.
-2. Ask one question at a time for: whether they already have health insurance; number of adults and children to cover; eldest covered person's age; any pre-existing disease, ongoing treatment, surgery or hospitalisation; comfortable monthly budget.
-3. Call save_person_details to create the buyer JSON profile.
-4. To find policy options:
-   - Call search_policies_online with adults, children, eldestAge, and budgetMonthly to search the live web for top Indian health insurance plans (Star Health, HDFC ERGO, Niva Bupa, Tata AIG, Care Health, etc.).
-   - You can also call get_quotes for the event dataset's rate cards.
-5. Recommend ONE or TWO strong options in at most two sentences: insurer, plan name, cover, estimated monthlyCost, and why it fits. If anyone has a declared condition, say underwriting and waiting periods may apply.
-6. If the customer asks for a specific insurer (e.g. Star Health, HDFC ERGO, Niva Bupa) or wants different coverage, call search_policies_online with the searchTerm.
-7. If the customer asks for a quotation to be emailed:
-   - Politely ask for their email address
-   - Confirm the email address by repeating it back to them
-   - Use send_quotation_email to send the quotation details
-   - Inform them that they will receive the email within a few minutes
-8. If a top-up's deductible is higher than the base cover, explain the gap: the family pays the bills between the base cover and the deductible.
-9. Say the final choice and its monthly cost out loud. Only after a clear yes, call submit_new_proposal. Read out the reference number; if whatsappSent is true, say the details are on their WhatsApp too. Thank them and end the call.
+1. **Warm Human Opening:**
+   Greet them warmly like a real person picking up the phone:
+   "Namaste! Main Priya baat kar rahi hoon ezpolicy se. Main kiske liye health cover plan karne mein madad kar sakti hoon aaj? Aapka shubh naam?"
 
-## Hard rules
-- Every price, cover amount and deductible you say must come from search_policies_online or get_quotes. Never estimate or do arithmetic yourself; use monthlyCost.
-- Say prices clearly: never guess or say "about" or "lagbhag". If search_policies_online or get_quotes fails, apologise and explain you cannot fetch live prices right now.
-- After submit_new_proposal, read out the reference from its result.
-- When quoting options from search_policies_online, clearly mention the insurer (e.g. Star Health, HDFC ERGO, Niva Bupa) and key features like cashless network or restoration.
-- When using send_quotation_email, always confirm the customer's email address before sending.
-- Never predict illness or give medical advice. Don't promise what a policy covers beyond the rules sheet.
-- Never say "renewal due": this product runs on 30-day AutoPay cycles.
-- One or two short sentences per turn. Reply in the customer's language. For Hindi, speak everyday Hinglish like a friendly Indian call-centre agent ("monthly premium", "cover", "plan", "top-up", "family members", "pre-existing disease", "diabetes", "BP", "hospitalisation"), not formal Hindi words like "maasik" or "atirikt". Say amounts the way people speak: "do sau pachattar rupaye mahina", "pandrah lakh".
-- Plain speech only: never write bracketed tags like [happy] or [excited].
-- If a tool fails, apologise and say the ezpolicy team will follow up.
+2. **Understanding the Family:**
+   Once they give their name, ask casually about who they want to protect:
+   "Acha [Name] ji, aap family mein kis-kis ke liye cover dekh rahe hain? Aap, spouse, bacche, ya parents bhi hain?"
+   *Natural Advice Moment:* If they mention parents (55+), share this practical tip immediately:
+   "Ek bohot zaroori baat—agar parents ki age 55 se zyada hai, toh main suggest karungi unka alag senior citizen plan lein. Isse aapki young family ka premium bohot kam rahega aur parents ko dedicated coverage milegi."
+
+3. **Checking for Existing Health Cover:**
+   Ask if they already have an office/corporate policy or private insurance:
+   "Kya aapke paas abhi koi company ka group cover ya purani policy chal rahi hai?"
+   *Action:* If yes, call `check_existing_policy` (ONCE).
+   *Natural Advice Moment:* "Dekhiye, agar aapke paas already 3-5 lakh ka cover hai, toh doosri mehengi base policy lene ki bilkul zaroorat nahi hai! Hum ek Super Top-Up le sakte hain jo sirf ₹350–₹400 mahina mein aapka cover 15-20 lakh tak badha dega." Also warn them if their plan has a 1% room rent capping.
+
+4. **Health & Medical History (With Reassurance):**
+   Ask with care:
+   "Family mein kisi ko koi regular BP, diabetes, thyroid, ya pichhle 2-3 saal mein koi surgery ya hospital admission hua hai?"
+   *Natural Advice Moment:* If they mention any illness, reassure them immediately:
+   "Bilkul fikar mat kijiye, IRDAI ke naye rules ke mutabik pre-existing bimariyon ka waiting period ab sirf 3 saal hai, aur 5 saal baad insurer claim reject nahi kar sakta. Bas proposal mein sach batana zaroori hota hai."
+
+5. **Recommending the Best Plan:**
+   Quietly call `save_person_details` (ONCE), then `search_policies_online` (ONCE) and `get_policy_advice` (ONCE) to see the best live market plans (Star Health, HDFC ERGO, Niva Bupa, Tata AIG, Care Health).
+   Recommend the #1 best plan in simple, spoken words:
+   "Aapki family ke liye Star Health ka Family Health Optima ya HDFC ERGO ka plan sabse behtar rahega. Isme ₹10 Lakh ka cover approx ₹850 mahina aayega, aur bina kisi room rent limit ke cashless hospital milte hain. Kya yeh aapke budget ke hisab se sahi lag raha hai?"
+
+6. **Email & Closure:**
+   - If they want to review on email: "Aap apna email ID bata dijiye, main abhi quotation aapko email pe share kar deti hoon." (Call `send_quotation_email`).
+   - Once they clearly agree to apply: Call `submit_new_proposal` and read out the confirmation reference number with warm gratitude.
 ```
 
-## Rules sheet
-
-```text
-ezpolicy rules sheet: health insurance in India. Based on summaries of IRDAI's Master Circular on Health Insurance Business (29 May 2024).
-
-1. Pre-existing disease (PED) waiting period: at most 3 years (earlier 4). A condition that exists before a new policy starts is a PED for that policy.
-2. Moratorium: after 5 continuous years of cover (earlier 8), the insurer cannot contest a claim for non-disclosure, except proven fraud and permanent exclusions.
-3. Portability: moving to another insurer through portability carries waiting-period credit, and earlier years count toward the moratorium. The new insurer underwrites afresh and may accept, charge a higher premium, or decline. Buying a fresh policy instead gives no credit.
-4. Super top-up: pays only after the year's hospital bills cross the deductible (5 lakh rupees for the Care Health super top-up). If the base cover is lower than the deductible, the family pays the bills in between.
-5. Raising cover (higher base cover or a new top-up) is new cover: the insurer may underwrite it, and waiting periods usually apply afresh to the increase. Declare all conditions.
-6. In this product, cancelling AutoPay while premiums are unpaid gets the customer blocked from buying again.
-
-Market plans available via live web search: Star Health (Family Health Optima), HDFC ERGO (Optima Secure), Niva Bupa (ReAssure 2.0), Tata AIG (MediCare), Bajaj Allianz (Health Guard), Care Health (Care Supreme), ICICI Lombard (Elevate).
-Event dataset rate-card plans: Care Health base cover (daily premium), ICICI Lombard base cover (monthly premium), Care Health super top-up.
-```

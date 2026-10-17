@@ -13,11 +13,12 @@ Built for the **Bachatt x Digia Voice AI Buildathon** (Fintech track), 17 Oct 20
 | 1. Extract insurance data from the event zip | Done: `scripts/extract_insurance.py` writes `backend/data/insurance.json` |
 | 2. Backend API: profile, quotes, proposals, activity | Done: implemented in `backend/src/index.ts`; `/api/session` starts a new-purchase session without preloading any old customer record; `/api/person-details` stores the buyer's structured profile JSON for the current call |
 | 3. Sarvam browser voice integration | Done in code: `frontend/src/BrowserCall.tsx` uses `sarvam-conv-ai-sdk/browser`; `POST /api/session` returns non-secret Sarvam session config with empty customer variables for a new buyer; `/api/sarvam/*` proxies signed-URL requests with `SARVAM_API_KEY` server-side |
-| 4. Sarvam dashboard agent and tools | Done: Sarvam MCP configured `ezpolicy` app `ezpolicy-4ae97723-494f`; updated prompt and rules to use live web search (`search_policies_online`) across top Indian insurers instead of hardcoded policies; added MCP server `sarvam-voice-agents` (`https://mcp.sarvam.ai/voice-agents`); `.env` pins the app/version |
-| 5. Frontend home page and live activity | Done: phone opens the Vite/ngrok URL, starts a voice check-in, and the same frontend ngrok URL forwards `/api/*` to the backend for Sarvam tools; the visible UI has no customer picker, does not hardcode customer names or personal details, and keeps the call button in `End call` mode while a browser session is active; activity feed tracks live web search results |
+| 4. Sarvam dashboard agent and tools | Done: Sarvam app `ezpolicy-4ae97723-494f` updated in `agent/setup.md` with authentic human persona ("Priya from ezpolicy"), replacing robotic prompts with natural conversational dialogue; uses live internet policy search (`search_policies_online`) and existing policy audit (`check_existing_policy`); `.env` pins the app/version |
+| 5. Frontend home page and live activity | Done: modularized into separate components (`ConversationPreview`, `CoverBoard`, `ProcessGuide`, `FaqSection`, `CallFeedback`, `api` service); enabled polling-based HMR inside Docker container; phone opens the Vite/ngrok URL and starts voice check-in; activity feed tracks live web search results and policy analysis |
 | 6. Live internet policy search functionality | Implemented: Added live web search in `/api/search-policies` scraping and extracting real-time policies across top Indian insurers (Star Health, HDFC ERGO, Niva Bupa, Tata AIG, Care Health, etc.) with real URLs, features, and tailored premiums, backed by a curated catalog; integrated with Sarvam agent as `search_policies_online` |
-| 7. Email quotation functionality | Implemented: Added email input modal in frontend UI and integrated with backend email sending functionality; users can request quotations via email after receiving a proposal |
-| 8. End-to-end voice test | Pending live browser voice test with real Sarvam runtime; committed Sarvam agent version now exists |
+| 7. Existing policy check & consultative advisory tools | Implemented: Added `/api/check-existing-policy` (live web search on existing policy terms, room rent 1% cap warning, IRDAI waiting periods/moratorium) and `/api/policy-advice` (proactive suggestions, senior parents separation, health condition PED guidance); integrated into Sarvam voice agent prompt and tools |
+| 8. Email quotation functionality | Implemented: Added email input modal in frontend UI and integrated with backend email sending functionality; users can request quotations via email after receiving a proposal |
+| 9. End-to-end voice test | Pending live browser voice test with real Sarvam runtime; committed Sarvam agent version now exists |
 
 ## How the demo works
 
@@ -27,6 +28,9 @@ Built for the **Bachatt x Digia Voice AI Buildathon** (Fintech track), 17 Oct 20
 4. The Sarvam browser SDK requests a signed WebSocket URL through `/api/sarvam/*`; the backend forwards to Sarvam and injects `SARVAM_API_KEY`.
 5. The Sarvam agent talks in Hindi or English. It asks for the buyer's details, saves the structured buyer profile JSON, then calls backend API tools through the frontend ngrok URL's `/api` proxy:
    - `save_person_details` -> `POST /api/person-details`
+   - `check_existing_policy` -> `POST /api/check-existing-policy`
+   - `get_policy_advice` -> `POST /api/policy-advice`
+   - `search_policies_online` -> `POST /api/search-policies`
    - `get_quotes` -> `POST /api/quotes`
    - `submit_new_proposal` -> `POST /api/proposals`
 6. The page polls `GET /api/activity` and shows quote/proposal activity live.
@@ -39,7 +43,7 @@ Phone browser (Vite :5173 over HTTPS)
 
 Sarvam API tools
   -> frontend ngrok URL /api proxy
-  -> /api/customer/active, /api/quotes, /api/proposals
+  -> /api/person-details, /api/check-existing-policy, /api/policy-advice, /api/search-policies, /api/quotes, /api/proposals
 ```
 
 ## Repo Layout
@@ -75,8 +79,10 @@ The frontend does not expose customer names, IDs, policy details or a profile pi
 | `GET /api/customer/:userId` | | profile: members, adults, children, eldestAge, policies, today |
 | `GET /api/customer/active` | | legacy profile route; not used by the new-purchase Sarvam agent |
 | `GET /api/customer/active/voice-context` | | legacy compact profile route; not used by the new-purchase Sarvam agent |
-| `POST /api/person-details` | `{ customerName, existingInsurance, existingInsurer?, existingCover?, existingPolicyNotes?, adults, children, eldestAge, declaredConditions?, budgetMonthly? }` | Saves current-call buyer profile JSON and returns `message_to_llm` context |
+| `POST /api/person-details` | `{ customerName, existingInsurance, existingInsurer?, existingCover?, existingPolicyNotes?, adults, children, eldestAge, coveredMembers?, declaredConditions?, ongoingTreatments?, hospitalizationHistory?, city?, budgetMonthly? }` | Saves current-call buyer profile JSON and returns `message_to_llm` context |
 | `GET /api/person-details/active` | | Current-call buyer profile JSON, for debugging |
+| `POST /api/check-existing-policy` | `{ insurerName, policyName?, coverAmount?, yearsActive?, isEmployerCover? }` | Live web search analysis of existing policy terms, room rent 1% cap check, PED waiting periods, moratorium, and super top-up fit |
+| `POST /api/policy-advice` | `{ adults, children, eldestAge, coveredMembers?, declaredConditions?, ongoingTreatments?, hospitalizationHistory?, existingInsurance?, existingInsurer?, existingCover?, budgetMonthly? }` | Proactive consultative advice, senior family member structuring, PED recommendations, and top plan picks |
 | `POST /api/quotes` | `{ adults, children, eldestAge, budgetMonthly? }` | `{ note, quotes[] }`; each quote has productId, insurer, productType, cadence, cover, premium, deductible, monthlyCost, withinBudget |
 | `POST /api/proposals` | `{ customerName?, productId, cover, addTopUp, declaredConditions?, notes? }` | `{ reference: "EZP-xxxxxx", status, whatsappSent }` |
 | `POST /api/session` | `{ userId? }` | Sarvam session config: `orgId`, `workspaceId`, `appId`, optional `version`, `userIdentifier`, empty customer `agentVariables`; blank body starts a new-buyer session |
@@ -84,7 +90,7 @@ The frontend does not expose customer names, IDs, policy details or a profile pi
 | `POST /api/send-quotation` | `{ customerEmail, customerName, quotationDetails }` | `{ message, messageId }` |
 | `/api/sarvam/*` | Sarvam browser SDK signed-URL request | Proxies to `SARVAM_RUNTIME_BASE` and injects `SARVAM_API_KEY` |
 | `POST /api/call` | | Gone for practical purposes: returns 410 because outbound telephony is disabled |
-| `GET /api/activity` | | events for the current voice session: `call`, `quotes`, `proposal`, `search_policies`, `email_sent` |
+| `GET /api/activity` | | events for the current voice session: `call`, `quotes`, `proposal`, `search_policies`, `check_existing_policy`, `policy_advice`, `email_sent` |
 
 ## Environment
 

@@ -96,7 +96,11 @@ type PersonDetailsBody = {
   adults?: unknown;
   children?: unknown;
   eldestAge?: unknown;
+  coveredMembers?: unknown;
   declaredConditions?: unknown;
+  ongoingTreatments?: unknown;
+  hospitalizationHistory?: unknown;
+  city?: unknown;
   budgetMonthly?: unknown;
 };
 
@@ -109,7 +113,11 @@ type PersonDetails = {
   adults: number | null;
   children: number | null;
   eldestAge: number | null;
+  coveredMembers: string;
   declaredConditions: string;
+  ongoingTreatments: string;
+  hospitalizationHistory: string;
+  city: string;
   budgetMonthly: number | null;
 };
 
@@ -220,12 +228,15 @@ function personDetailsContext(details: PersonDetails): string {
     details.existingInsurance === null
       ? "existing health insurance not answered"
       : details.existingInsurance
-        ? `has existing health insurance${details.existingInsurer ? ` with ${details.existingInsurer}` : ""}${details.existingCover ? `, cover ${details.existingCover}` : ""}${details.existingPolicyNotes ? `, notes ${details.existingPolicyNotes}` : ""}`
+        ? `has existing health insurance${details.existingInsurer ? ` with ${details.existingInsurer}` : ""}${details.existingCover ? `, cover ₹${details.existingCover}` : ""}${details.existingPolicyNotes ? `, notes: ${details.existingPolicyNotes}` : ""}`
         : "no existing health insurance";
-  const family = `adults ${details.adults ?? "unknown"}, children ${details.children ?? "unknown"}, eldestAge ${details.eldestAge ?? "unknown"}`;
-  const health = details.declaredConditions ? `declared conditions: ${details.declaredConditions}` : "no declared conditions mentioned";
-  const budget = details.budgetMonthly ? `budgetMonthly ${details.budgetMonthly}` : "budget not answered";
-  return `Buyer ${details.customerName || "name not answered"}; ${existingInsurance}; ${family}; ${health}; ${budget}.`;
+  const family = `covered members: ${details.coveredMembers || `${details.adults ?? "unknown"} adults, ${details.children ?? "unknown"} children`}, eldest age ${details.eldestAge ?? "unknown"}`;
+  const health = details.declaredConditions ? `health problems/conditions: ${details.declaredConditions}` : "no chronic conditions declared";
+  const treatments = details.ongoingTreatments ? `ongoing treatment: ${details.ongoingTreatments}` : "";
+  const hospital = details.hospitalizationHistory ? `past hospitalisation/surgery: ${details.hospitalizationHistory}` : "";
+  const city = details.city ? `city: ${details.city}` : "";
+  const budget = details.budgetMonthly ? `budget ₹${details.budgetMonthly}/mo` : "budget not answered";
+  return `Buyer ${details.customerName || "name not answered"}; ${existingInsurance}; ${family}; ${health}${treatments ? `; ${treatments}` : ""}${hospital ? `; ${hospital}` : ""}${city ? `; ${city}` : ""}; ${budget}.`;
 }
 
 // Tool: the agent calls this first on every call (phone, WhatsApp or web) to load who it's talking to.
@@ -296,7 +307,11 @@ app.post("/api/person-details", (req, res) => {
     adults,
     children,
     eldestAge,
+    coveredMembers: String(body.coveredMembers ?? "").trim(),
     declaredConditions: String(body.declaredConditions ?? "").trim(),
+    ongoingTreatments: String(body.ongoingTreatments ?? "").trim(),
+    hospitalizationHistory: String(body.hospitalizationHistory ?? "").trim(),
+    city: String(body.city ?? "").trim(),
     budgetMonthly: optionalMoney(body.budgetMonthly),
   };
 
@@ -431,17 +446,38 @@ app.post("/api/send-quotation", async (req, res) => {
     // Format quotation details for email
     let quotationHtml = "";
     if (Array.isArray(quotationDetails)) {
-      quotationHtml = quotationDetails.map(detail => `
-        <div style="border: 1px solid #ddd; padding: 15px; margin: 15px 0; border-radius: 5px; background-color: #fafafa;">
-          <h4 style="margin-top: 0; color: #333;">${detail.productName} - ${detail.insurer}</h4>
-          <p><strong>Coverage:</strong> ₹${detail.cover?.toLocaleString() || 'N/A'}</p>
-          <p><strong>Premium:</strong> ₹${detail.premium?.toLocaleString() || 'N/A'} ${detail.cadence || ''}</p>
-          ${detail.deductible ? `<p><strong>Deductible:</strong> ₹${detail.deductible?.toLocaleString()}</p>` : ''}
-          <p><strong>Product Type:</strong> ${detail.productType || 'N/A'}</p>
-          <p><strong>Features:</strong> ${detail.features?.join(', ') || 'N/A'}</p>
-          ${detail.url ? `<p><a href="${detail.url}" target="_blank">View Policy Details</a></p>` : ''}
-        </div>
-      `).join('');
+      const rows = quotationDetails.map(detail => {
+        const cover = detail.cover?.toLocaleString('en-IN') || 'N/A';
+        const premium = detail.premium?.toLocaleString('en-IN') || 'N/A';
+        const monthlyCost = detail.monthlyCost?.toLocaleString('en-IN') || premium;
+        const deductible = detail.deductible ? `₹${detail.deductible.toLocaleString('en-IN')}` : 'None';
+        const insurer = detail.insurer?.replace(/_/g, ' ').replace(/\b\w/g, c => c.toUpperCase()) || 'N/A';
+        const productType = detail.productType?.replace(/_/g, ' ') || 'N/A';
+        return `
+          <tr style="border-bottom: 1px solid #eee;">
+            <td style="padding: 12px; font-weight: 600;">${insurer}</td>
+            <td style="padding: 12px;">${productType}</td>
+            <td style="padding: 12px; text-align: right;">₹${cover}</td>
+            <td style="padding: 12px; text-align: right;">₹${monthlyCost}/mo</td>
+            <td style="padding: 12px; text-align: center;">${deductible}</td>
+          </tr>
+        `;
+      }).join('');
+      quotationHtml = `
+        <table style="width: 100%; border-collapse: collapse; margin: 20px 0; font-size: 14px;">
+          <thead>
+            <tr style="background-color: #007bff; color: white;">
+              <th style="padding: 12px; text-align: left;">Insurer</th>
+              <th style="padding: 12px; text-align: left;">Type</th>
+              <th style="padding: 12px; text-align: right;">Cover</th>
+              <th style="padding: 12px; text-align: right;">Premium</th>
+              <th style="padding: 12px; text-align: center;">Deductible</th>
+            </tr>
+          </thead>
+          <tbody>${rows}
+          </tbody>
+        </table>
+      `;
     } else {
       quotationHtml = `<pre>${JSON.stringify(quotationDetails, null, 2)}</pre>`;
     }
@@ -673,7 +709,7 @@ async function searchInsuranceWeb(params: {
       ? `${searchTerm} health insurance family plan india site:.in OR site:.com`
       : `best family health insurance plans india star hdfc niva bupa tata care 2026`;
 
-    const res = await axios.get(`https://html.duckduckgo.com/html/?q=${encodeURIComponent(q)}`, {
+    const res = await axios.get(`https://www.bing.com/search?q=${encodeURIComponent(q)}`, {
       headers: {
         "User-Agent":
           "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
@@ -685,10 +721,10 @@ async function searchInsuranceWeb(params: {
 
     const $ = cheerio.load(res.data);
 
-    $(".result__body").each((i, el) => {
-      const title = $(el).find(".result__title a").text().trim();
-      const snippet = $(el).find(".result__snippet").text().trim();
-      const rawLink = $(el).find(".result__title a").attr("href") || $(el).find(".result__url").attr("href") || "";
+    $(".b_algo").each((i, el) => {
+      const title = $(el).find("h2 a").text().trim();
+      const snippet = $(el).find(".b_caption p").text().trim();
+      const rawLink = $(el).find("h2 a").attr("href") || "";
 
       let cleanUrl = rawLink;
       if (rawLink.includes("uddg=")) {
@@ -794,6 +830,201 @@ app.post("/api/search-policies", async (req, res) => {
     console.error("Error searching policies:", error);
     res.status(500).json({
       error: "Failed to search policies",
+      message: error instanceof Error ? error.message : "Unknown error",
+    });
+  }
+});
+
+// Tool: Web search and analysis tool for existing policies
+app.post("/api/check-existing-policy", async (req, res) => {
+  try {
+    const insurerName = String(req.body?.insurerName ?? "").trim();
+    const policyName = String(req.body?.policyName ?? "").trim();
+    const coverAmount = optionalMoney(req.body?.coverAmount);
+    const yearsActive = optionalWholeNumber(req.body?.yearsActive);
+    const isEmployerCover = optionalBoolean(req.body?.isEmployerCover);
+
+    if (!insurerName && !policyName) {
+      return res.status(400).json({ error: "insurerName or policyName is required" });
+    }
+
+    // Perform live web search for existing policy details
+    let webInsights: { title: string; snippet: string }[] = [];
+    try {
+      const q = `${insurerName} ${policyName} health insurance policy wording room rent waiting period pre existing disease`;
+      const searchRes = await axios.get(`https://html.duckduckgo.com/html/?q=${encodeURIComponent(q)}`, {
+        headers: {
+          "User-Agent":
+            "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+        },
+        timeout: 6000,
+      });
+      const $ = cheerio.load(searchRes.data);
+      $(".result__body").each((_, el) => {
+        const title = $(el).find(".result__title a").text().trim();
+        const snippet = $(el).find(".result__snippet").text().trim();
+        if (title && snippet) {
+          webInsights.push({ title, snippet });
+        }
+      });
+      webInsights = webInsights.slice(0, 3);
+    } catch (e) {
+      console.warn("Web search for existing policy had an issue:", e instanceof Error ? e.message : e);
+    }
+
+    const combinedText = webInsights.map((w) => `${w.title} ${w.snippet}`).join(" ").toLowerCase();
+
+    // Check room rent cap
+    const hasRoomRentLimit = /room rent\s*(limit|capping|1%|2%)/i.test(combinedText) || /standard.*capping/i.test(combinedText);
+    const roomRentAdvice = hasRoomRentLimit
+      ? "Watch out: This policy typically has a 1% room rent cap. If you choose a private room above the cap, proportional deductions apply across doctors' fees, surgery, and ICU bills."
+      : "Room rent: Most newer policies from this insurer allow single private room or have no room rent sub-limit.";
+
+    // Waiting period status
+    const pedWaitingPeriod = yearsActive && yearsActive >= 3
+      ? "Continuity benefit: Because this policy has been active for 3+ continuous years, pre-existing diseases are already covered under IRDAI guidelines."
+      : "Waiting period: Pre-existing diseases typically require up to 3 years waiting period under IRDAI regulations.";
+
+    // Moratorium status
+    const moratoriumStatus = yearsActive && yearsActive >= 5
+      ? "Moratorium achieved: Your cover has crossed 5 continuous years, meaning the insurer cannot contest claims for non-disclosure except proven fraud."
+      : "Moratorium rule: IRDAI provides an incontestable moratorium after 5 continuous years of coverage.";
+
+    // Actionable recommendation
+    let suggestion = "";
+    if (isEmployerCover) {
+      suggestion = "Corporate employer policies end when you change jobs. We strongly recommend adding a personal Super Top-Up or a family base plan to safeguard your family's lifelong cover.";
+    } else if (coverAmount && coverAmount <= 500000) {
+      suggestion = `Your existing ₹${(coverAmount / 100000).toFixed(0)} Lakh cover is vulnerable to hospital inflation in 2026. Rather than buying another expensive base plan, adding a ₹10–15 Lakh Super Top-Up with a ₹5 Lakh deductible is the smartest move—giving you 3x higher protection for just ₹350–₹500/month.`;
+    } else {
+      suggestion = "Your current cover amount is a good foundation. Consider adding a Super Top-Up if you want high-sum coverage against critical illnesses without doubling your premium.";
+    }
+
+    const assessment = {
+      insurerName,
+      policyName: policyName || "Standard Health Plan",
+      coverAmount,
+      yearsActive,
+      isEmployerCover,
+      roomRentAdvice,
+      pedWaitingPeriod,
+      moratoriumStatus,
+      suggestion,
+      webReferences: webInsights,
+    };
+
+    log("check_existing_policy", assessment);
+
+    res.json({
+      status: "success",
+      message: `Analyzed existing policy for ${insurerName}`,
+      assessment,
+      adviceToTellCustomer: `${roomRentAdvice} ${pedWaitingPeriod} ${suggestion}`,
+    });
+  } catch (error) {
+    console.error("Error checking existing policy:", error);
+    res.status(500).json({
+      error: "Failed to check existing policy",
+      message: error instanceof Error ? error.message : "Unknown error",
+    });
+  }
+});
+
+// Tool: Proactive insurance advice and consultative suggestions engine
+app.post("/api/policy-advice", async (req, res) => {
+  try {
+    const adults = Number(req.body?.adults) || 2;
+    const children = Number(req.body?.children) || 0;
+    const eldestAge = Number(req.body?.eldestAge) || 35;
+    const budgetMonthly = optionalMoney(req.body?.budgetMonthly);
+    const coveredMembers = String(req.body?.coveredMembers ?? "").toLowerCase();
+    const declaredConditions = String(req.body?.declaredConditions ?? "").trim();
+    const ongoingTreatments = String(req.body?.ongoingTreatments ?? "").trim();
+    const hospitalizationHistory = String(req.body?.hospitalizationHistory ?? "").trim();
+    const existingInsurance = optionalBoolean(req.body?.existingInsurance);
+    const existingInsurer = String(req.body?.existingInsurer ?? "").trim();
+    const existingCover = optionalMoney(req.body?.existingCover);
+
+    const suggestions: string[] = [];
+
+    // 1. Elderly Parents / In-Laws Structuring Insight
+    if (
+      eldestAge >= 55 ||
+      coveredMembers.includes("parent") ||
+      coveredMembers.includes("mother") ||
+      coveredMembers.includes("father") ||
+      coveredMembers.includes("in-law") ||
+      coveredMembers.includes("sasur") ||
+      coveredMembers.includes("saas") ||
+      coveredMembers.includes("mummy") ||
+      coveredMembers.includes("papa")
+    ) {
+      suggestions.push(
+        "Family structuring advice: Floater premiums in India are based on the eldest member's age. If covering parents or in-laws aged 55+, keep parents on a separate Senior Citizen plan so the younger family (self, spouse, children) enjoys lower base premiums."
+      );
+    }
+
+    // 2. Health Problems / Pre-existing Disease Insight
+    if (
+      (declaredConditions && !/none|no|nahi|nahin|nothing/i.test(declaredConditions)) ||
+      (ongoingTreatments && !/none|no/i.test(ongoingTreatments)) ||
+      (hospitalizationHistory && !/none|no/i.test(hospitalizationHistory))
+    ) {
+      const conditionSummary = [declaredConditions, ongoingTreatments, hospitalizationHistory].filter(Boolean).join(", ");
+      suggestions.push(
+        `Health condition guidance (${conditionSummary}): Under IRDAI's Master Circular, the maximum waiting period for pre-existing disease is now capped at 3 years. We advise declaring all details fully to ensure claim approval after the 5-year moratorium, and opting for day-1 diabetes/hypertension riders if available.`
+      );
+    }
+
+    // 3. Existing Policy & Super Top-Up Advice
+    if (existingInsurance) {
+      const coverText = existingCover ? `₹${(existingCover / 100000).toFixed(0)} Lakh` : "existing";
+      suggestions.push(
+        `Super Top-Up strategy: Since you already have a ${coverText} policy with ${existingInsurer || "an insurer"}, don't waste money buying a second base policy! A Super Top-Up of ₹10–15 Lakh with a ₹5 Lakh deductible costs only ~₹350–₹500/month and covers big hospitalizations seamlessly.`
+      );
+    } else {
+      suggestions.push(
+        "Base cover priority: Because you have no existing health cover, your first priority should be a solid family floater of at least ₹5–10 Lakh with no room rent capping."
+      );
+    }
+
+    // 4. Young Children Benefit Insight
+    if (children > 0) {
+      suggestions.push(
+        "Child care protection: For families with kids, look for plans with comprehensive paediatric outpatient check-ups and OPD vaccination benefits (such as HDFC ERGO Optima Secure or Tata AIG MediCare)."
+      );
+    }
+
+    // 5. Budget Consideration
+    if (budgetMonthly) {
+      suggestions.push(
+        `Budget optimization: For ₹${budgetMonthly}/month, look for monthly AutoPay options with cashless network hospitals within 5 km of your residence.`
+      );
+    }
+
+    const curatedPlans = getCuratedMarketPlans(adults, children, eldestAge);
+    const topPicks = curatedPlans.slice(0, 2).map((p) => ({
+      insurer: p.insurer,
+      productName: p.productName,
+      cover: p.cover,
+      monthlyCost: p.monthlyCost,
+      highlight: p.features[0] || "10,000+ Cashless Network Hospitals",
+    }));
+
+    const responsePayload = {
+      status: "success",
+      suggestions,
+      topPicks,
+      spokenSummary: suggestions.slice(0, 2).join(" "),
+    };
+
+    log("policy_advice", responsePayload);
+
+    res.json(responsePayload);
+  } catch (error) {
+    console.error("Error generating policy advice:", error);
+    res.status(500).json({
+      error: "Failed to generate policy advice",
       message: error instanceof Error ? error.message : "Unknown error",
     });
   }

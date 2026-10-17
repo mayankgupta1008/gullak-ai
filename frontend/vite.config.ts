@@ -6,7 +6,12 @@ export default defineConfig({
   plugins: [react()],
   server: {
     host: "0.0.0.0",
-    allowedHosts: [".ngrok-free.dev"], // phones open the app through the ngrok tunnel
+    port: 5173,
+    watch: {
+      usePolling: true,
+      interval: 100,
+    },
+    allowedHosts: [".ngrok-free.dev", ".ngrok.io", "localhost"], // phones open the app through the ngrok tunnel
     proxy: { "/api": process.env.API_PROXY_TARGET || "http://127.0.0.1:5001" },
   },
 })
