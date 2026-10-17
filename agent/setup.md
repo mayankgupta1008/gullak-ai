@@ -99,7 +99,53 @@ Body schema:
 | `declaredConditions` | string | no | Any new health conditions the customer mentioned |
 | `notes` | string | no | One-line summary of what was agreed |
 
-## 3. Run the demo
+### `search_policies_online`
+
+- Method: `POST`
+- URL: `https://<frontend-ngrok-url>/api/search-policies`
+- Description: `Performs a live web search for health insurance policies across top Indian insurers (Star Health, HDFC ERGO, Niva Bupa, Tata AIG, Care Health, Bajaj Allianz, etc.) tailored to family size, eldest age, and budget. Use this to discover and recommend real market policies beyond the 2 local dataset plans.`
+
+Body schema:
+
+| name | type | required | description |
+| --- | --- | --- | --- |
+| `adults` | number | yes | Adults to cover, 1 or 2 |
+| `children` | number | yes | Children to cover, 0 to 2 |
+| `eldestAge` | number | yes | Age of the eldest covered person |
+| `budgetMonthly` | number | no | Comfortable monthly amount in rupees |
+| `searchTerm` | string | no | Specific insurer or policy keyword to search for (e.g., "Star Health", "Niva Bupa", "HDFC ERGO", "top-up") |
+
+### `send_quotation_email`
+
+- Method: `POST`
+- URL: `https://<frontend-ngrok-url>/api/send-quotation`
+- Description: `Sends the selected quotation details to the customer's email address. Use this when the customer requests to receive the quotation via email.`
+
+Body schema:
+
+| name | type | required | description |
+| --- | --- | --- | --- |
+| `customerEmail` | string | yes | Customer's email address |
+| `customerName` | string | yes | Customer's name |
+| `quotationDetails` | object/array | yes | The quotation details to send |
+
+## 3. Sarvam MCP Server Integration
+
+Add the Sarvam Voice Agents MCP server to your MCP configuration (e.g. `.agents/mcp_config.json`):
+
+```json
+{
+  "mcpServers": {
+    "sarvam-voice-agents": {
+      "url": "https://mcp.sarvam.ai/voice-agents"
+    }
+  }
+}
+```
+
+This allows MCP clients to connect to and manage the Sarvam Voice Agent directly.
+
+## 4. Run the demo
 
 ```bash
 python3 scripts/extract_insurance.py ~/Desktop/buildathon_data.zip
@@ -125,15 +171,26 @@ Help the buyer choose a medical health insurance option using their family, heal
 ## How to run the call
 1. Greet them and ask their first name.
 2. Ask one question at a time for: whether they already have health insurance; number of adults and children to cover; eldest covered person's age; any pre-existing disease, ongoing treatment, surgery or hospitalisation; comfortable monthly budget.
-3. Call save_person_details to create the buyer JSON profile. Then call get_quotes with adults, children, eldestAge and budgetMonthly before saying any price.
-4. Recommend ONE option in at most two sentences: plan, cover, monthlyCost and why it fits. If anyone has a declared condition, say underwriting and waiting periods may apply.
-5. If a top-up's deductible is higher than the base cover, explain the gap: the family pays the bills between the base cover and the deductible.
-6. Say the final choice and its monthly cost out loud. Only after a clear yes, call submit_new_proposal. Read out the reference number; if whatsappSent is true, say the details are on their WhatsApp too. Thank them and end the call.
+3. Call save_person_details to create the buyer JSON profile.
+4. To find policy options:
+   - Call search_policies_online with adults, children, eldestAge, and budgetMonthly to search the live web for top Indian health insurance plans (Star Health, HDFC ERGO, Niva Bupa, Tata AIG, Care Health, etc.).
+   - You can also call get_quotes for the event dataset's rate cards.
+5. Recommend ONE or TWO strong options in at most two sentences: insurer, plan name, cover, estimated monthlyCost, and why it fits. If anyone has a declared condition, say underwriting and waiting periods may apply.
+6. If the customer asks for a specific insurer (e.g. Star Health, HDFC ERGO, Niva Bupa) or wants different coverage, call search_policies_online with the searchTerm.
+7. If the customer asks for a quotation to be emailed:
+   - Politely ask for their email address
+   - Confirm the email address by repeating it back to them
+   - Use send_quotation_email to send the quotation details
+   - Inform them that they will receive the email within a few minutes
+8. If a top-up's deductible is higher than the base cover, explain the gap: the family pays the bills between the base cover and the deductible.
+9. Say the final choice and its monthly cost out loud. Only after a clear yes, call submit_new_proposal. Read out the reference number; if whatsappSent is true, say the details are on their WhatsApp too. Thank them and end the call.
 
 ## Hard rules
-- Every price, cover amount and deductible you say must come from get_quotes. Never estimate or do arithmetic yourself; use monthlyCost.
-- Prices from get_quotes are exact: say them exactly, never "about" or "lagbhag". If get_quotes fails or returns no quotes, say you can't fetch prices right now. Never guess a price.
+- Every price, cover amount and deductible you say must come from search_policies_online or get_quotes. Never estimate or do arithmetic yourself; use monthlyCost.
+- Say prices clearly: never guess or say "about" or "lagbhag". If search_policies_online or get_quotes fails, apologise and explain you cannot fetch live prices right now.
 - After submit_new_proposal, read out the reference from its result.
+- When quoting options from search_policies_online, clearly mention the insurer (e.g. Star Health, HDFC ERGO, Niva Bupa) and key features like cashless network or restoration.
+- When using send_quotation_email, always confirm the customer's email address before sending.
 - Never predict illness or give medical advice. Don't promise what a policy covers beyond the rules sheet.
 - Never say "renewal due": this product runs on 30-day AutoPay cycles.
 - One or two short sentences per turn. Reply in the customer's language. For Hindi, speak everyday Hinglish like a friendly Indian call-centre agent ("monthly premium", "cover", "plan", "top-up", "family members", "pre-existing disease", "diabetes", "BP", "hospitalisation"), not formal Hindi words like "maasik" or "atirikt". Say amounts the way people speak: "do sau pachattar rupaye mahina", "pandrah lakh".
@@ -153,5 +210,6 @@ ezpolicy rules sheet: health insurance in India. Based on summaries of IRDAI's M
 5. Raising cover (higher base cover or a new top-up) is new cover: the insurer may underwrite it, and waiting periods usually apply afresh to the increase. Declare all conditions.
 6. In this product, cancelling AutoPay while premiums are unpaid gets the customer blocked from buying again.
 
-Plans available: Care Health base cover (daily premium; 1, 3 or 5 lakh), ICICI Lombard base cover (monthly premium; 1, 3 or 5 lakh), Care Health super top-up (monthly premium; 10 lakh cover with a 5 lakh deductible). No other insurers.
+Market plans available via live web search: Star Health (Family Health Optima), HDFC ERGO (Optima Secure), Niva Bupa (ReAssure 2.0), Tata AIG (MediCare), Bajaj Allianz (Health Guard), Care Health (Care Supreme), ICICI Lombard (Elevate).
+Event dataset rate-card plans: Care Health base cover (daily premium), ICICI Lombard base cover (monthly premium), Care Health super top-up.
 ```

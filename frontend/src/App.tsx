@@ -1,10 +1,19 @@
 import { useEffect, useState } from 'react'
 import './App.css'
 import { BrowserCall } from './BrowserCall'
+import { EmailModal } from './EmailModal'
 
 type Topic = 'family' | 'health' | 'budget'
 type Language = 'en' | 'hi'
-type Activity = { type: string; at?: string; reference?: string; quotes?: unknown[]; personDetails?: unknown }
+type Activity = {
+  type: string;
+  at?: string;
+  reference?: string;
+  quotes?: unknown[];
+  results?: unknown[];
+  message?: string;
+  personDetails?: unknown;
+}
 const topics: { id: Topic; en: string; hi: string }[] = [
   { id: 'family', en: 'Our family', hi: 'हमारा परिवार' },
   { id: 'health', en: 'Our health', hi: 'हमारी सेहत' },
@@ -37,6 +46,8 @@ function App() {
   const [callState, setCallState] = useState<'idle' | 'started'>('idle')
   const [events, setEvents] = useState<Activity[]>([])
   const [activityError, setActivityError] = useState(false)
+  const [isEmailModalOpen, setIsEmailModalOpen] = useState(false)
+  const [emailToSend, setEmailToSend] = useState('')
   useEffect(() => {
     const observer = new IntersectionObserver(entries => entries.forEach(entry => {
       if (entry.isIntersecting) { entry.target.classList.add('arrived'); observer.unobserve(entry.target) }
@@ -60,6 +71,52 @@ function App() {
     const timer = window.setInterval(() => void poll(), 3000)
     return () => { controller.abort(); window.clearInterval(timer) }
   }, [callState])
+
+  const handleEmailSubmit = async (email: string) => {
+    try {
+      // Find the latest quote and search data from events
+      const quoteEvent = events.find(event => event.type === 'quotes')
+      const searchEvent = events.find(event => event.type === 'search_policies')
+      const proposalEvent = events.find(event => event.type === 'proposal')
+
+      // Prepare quotation details with both dataset quotes and live web search policies
+      const quotationDetails = {
+        quotes: quoteEvent?.quotes || [],
+        searchedPolicies: searchEvent?.results || [],
+        proposalReference: proposalEvent?.reference || null,
+        timestamp: new Date().toISOString()
+      }
+
+      const response = await fetch('/api/send-quotation', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          customerEmail: email,
+          customerName: 'Customer',
+          quotationDetails
+        })
+      })
+
+      if (!response.ok) {
+        throw new Error('Failed to send quotation email')
+      }
+
+      // Close the modal
+      setIsEmailModalOpen(false)
+
+      // Add success feedback to events
+      setEvents(prev => [...prev, {
+        type: 'email_sent',
+        at: new Date().toISOString(),
+        message: `Quotation sent to ${email}`
+      }])
+    } catch (error) {
+      console.error('Error sending quotation email:', error)
+      alert('Failed to send quotation email. Please try again.')
+    }
+  }
   return (
     <>
       <a className="skip-link" href="#main">Skip to content</a>
@@ -69,6 +126,11 @@ function App() {
         <a className="header-action" href="#check-in">Try a check-in <Arrow /></a>
       </header>
       <main id="main">
+        <EmailModal
+          isOpen={isEmailModalOpen}
+          onClose={() => setIsEmailModalOpen(false)}
+          onSubmit={handleEmailSubmit}
+        />
         <section className="hero" aria-labelledby="hero-title">
           <div className="hero-copy">
             <div className="hero-intro"><span>For the people<br />you call family.</span><span>In Hindi.<br />In English. In your words.</span></div>
@@ -111,7 +173,7 @@ function App() {
           </div>
         </section>
         <section className="faq-section section" id="questions" aria-labelledby="faq-title"><div className="faq-heading"><h2 id="faq-title" data-reveal>Before<br />we talk.</h2><p data-reveal>A few things you<br />might want to know.</p></div><div className="faq-list">{faqs.map(([question, answer]) => <details key={question} name="questions" data-reveal><summary>{question}<span aria-hidden="true" className="faq-plus">+</span></summary><p>{answer}</p></details>)}</div></section>
-        <section className="checkin-section section" id="check-in" aria-labelledby="checkin-title"><div className="closing-copy"><h2 id="checkin-title" data-reveal>Your next<br />check-in.</h2><p data-reveal>A familiar voice.<br />A little more clarity about your cover.</p><a href="#preview" className="text-link" data-reveal>Explore the conversation preview</a></div><form className="call-form" data-ui data-reveal onSubmit={event => event.preventDefault()}><div className="fragment-top"><span>Voice check-in</span><Mark /></div><h3>Start your health cover check-in.</h3><p>Talk in Hindi or English. The agent will ask about existing insurance, family members, health declarations and monthly budget.</p><p className="form-note">Tap “Start voice check-in”, allow your microphone, and answer naturally.</p><BrowserCall onStarted={() => { setEvents([]); setCallState('started') }} /><div className="call-feedback" aria-live="polite">{callState === 'started' && <><p>Call in progress. What the agent does appears below.</p><ul>{events.map((event, index) => <li key={index}>{event.type === 'proposal' ? `Proposal submitted: ${event.reference ?? 'reference pending'}` : event.type === 'quotes' ? `${event.quotes?.length ?? 0} cover options retrieved` : event.type === 'person_details' ? 'Buyer profile saved' : event.type === 'call' ? 'Check-in started' : 'Check-in activity updated'}</li>)}</ul>{activityError && <p>Activity updates are unavailable. The voice session may still be in progress.</p>}<button type="button" className="text-link" onClick={() => setCallState('idle')}>Close call activity</button></>}</div></form></section>
+        <section className="checkin-section section" id="check-in" aria-labelledby="checkin-title"><div className="closing-copy"><h2 id="checkin-title" data-reveal>Your next<br />check-in.</h2><p data-reveal>A familiar voice.<br />A little more clarity about your cover.</p><a href="#preview" className="text-link" data-reveal>Explore the conversation preview</a></div><form className="call-form" data-ui data-reveal onSubmit={event => event.preventDefault()}><div className="fragment-top"><span>Voice check-in</span><Mark /></div><h3>Start your health cover check-in.</h3><p>Talk in Hindi or English. The agent will ask about existing insurance, family members, health declarations and monthly budget.</p><p className="form-note">Tap “Start voice check-in”, allow your microphone, and answer naturally.</p><BrowserCall onStarted={() => { setEvents([]); setCallState('started') }} /><div className="call-feedback" aria-live="polite">{callState === 'started' && <><p>Call in progress. What the agent does appears below.</p><ul>{events.map((event, index) => <li key={index}>{event.type === 'proposal' ? `Proposal submitted: ${event.reference ?? 'reference pending'}` : event.type === 'quotes' ? `${event.quotes?.length ?? 0} cover options retrieved` : event.type === 'search_policies' ? `${event.results?.length ?? 0} web policy options found` : event.type === 'person_details' ? 'Buyer profile saved' : event.type === 'call' ? 'Check-in started' : event.type === 'email_sent' ? event.message : 'Check-in activity updated'}</li>)}</ul>{activityError && <p>Activity updates are unavailable. The voice session may still be in progress.</p>}{events.some(event => event.type === 'proposal') && <button type="button" className="text-link" onClick={() => setIsEmailModalOpen(true)}>Send Quotation via Email</button>}<button type="button" className="text-link" onClick={() => setCallState('idle')}>Close call activity</button></>}</div></form></section>
       </main>
       <footer><a className="brand" href="#"><Mark />ezpolicy.</a><span>Health cover, in your words.</span><a href="#questions">About this prototype</a><span>© {new Date().getFullYear()} ezpolicy</span></footer>
     </>

@@ -174,6 +174,123 @@ footer .brand-mark { width: 25px; }
   .call-form { max-width: none; padding: 24px; }
   footer { display: grid; grid-template-columns: 1fr; gap: 22px; padding-block: 36px; }
 }
+.modal-overlay {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background-color: rgba(0, 0, 0, 0.7);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 1000;
+}
+
+.modal-content {
+  background: var(--bg);
+  color: var(--ink);
+  padding: 30px;
+  border-radius: 0;
+  width: 100%;
+  max-width: 500px;
+  position: relative;
+  box-shadow: 0 10px 25px rgba(0, 0, 0, 0.3);
+}
+
+.modal-close {
+  position: absolute;
+  top: 15px;
+  right: 15px;
+  background: none;
+  border: none;
+  font-size: 28px;
+  cursor: pointer;
+  padding: 0;
+  width: 30px;
+  height: 30px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.modal-content h3 {
+  margin-top: 0;
+  font-size: var(--step-lead);
+  font-weight: 500;
+  margin-bottom: 15px;
+}
+
+.modal-content p {
+  font-size: var(--step-body);
+  line-height: 1.55;
+  margin-bottom: 25px;
+}
+
+.form-group {
+  margin-bottom: 25px;
+}
+
+.email-input {
+  width: 100%;
+  padding: 15px;
+  border: 1px solid var(--muted);
+  background: var(--panel);
+  color: var(--ink);
+  font-size: var(--step-body);
+  box-sizing: border-box;
+}
+
+.modal-actions {
+  display: flex;
+  gap: 15px;
+  justify-content: flex-end;
+}
+
+.button-secondary {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 50px;
+  padding: 12px 20px;
+  border: 1px solid var(--muted);
+  background: transparent;
+  color: var(--ink);
+  font-size: var(--step-body);
+  font-weight: 500;
+  cursor: pointer;
+  transition: background 180ms ease;
+}
+
+.button-secondary:hover {
+  background: var(--panel);
+}
+
+.button-primary {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 50px;
+  padding: 12px 20px;
+  border: 0;
+  background: var(--accent);
+  color: var(--accent-ink);
+  font-size: var(--step-body);
+  font-weight: 500;
+  cursor: pointer;
+  transition: transform 180ms var(--ease-out);
+}
+
+.button-primary:hover {
+  transform: translateY(-2px);
+}
+
+.button-primary:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+  transform: none;
+}
+
 @media (prefers-reduced-motion: no-preference) {
   .line > span { animation: headline-in 900ms var(--ease-out) both; }
   .line:nth-child(2) > span { animation-delay: 110ms; }

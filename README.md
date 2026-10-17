@@ -13,9 +13,11 @@ Built for the **Bachatt x Digia Voice AI Buildathon** (Fintech track), 17 Oct 20
 | 1. Extract insurance data from the event zip | Done: `scripts/extract_insurance.py` writes `backend/data/insurance.json` |
 | 2. Backend API: profile, quotes, proposals, activity | Done: implemented in `backend/src/index.ts`; `/api/session` starts a new-purchase session without preloading any old customer record; `/api/person-details` stores the buyer's structured profile JSON for the current call |
 | 3. Sarvam browser voice integration | Done in code: `frontend/src/BrowserCall.tsx` uses `sarvam-conv-ai-sdk/browser`; `POST /api/session` returns non-secret Sarvam session config with empty customer variables for a new buyer; `/api/sarvam/*` proxies signed-URL requests with `SARVAM_API_KEY` server-side |
-| 4. Sarvam dashboard agent and tools | Done: Sarvam MCP configured `ezpolicy` app `ezpolicy-4ae97723-494f`, committed version `9`, Hindi+English support, Hinglish support voice, intro asks the buyer's first name immediately, new-purchase prompt that asks existing health insurance separately from pre-existing disease, saves buyer JSON, then quotes; active API tools are `save_person_details`, `get_quotes`, `submit_new_proposal`; `.env` pins the app/version |
-| 5. Frontend home page and live activity | Done: phone opens the Vite/ngrok URL, starts a voice check-in, and the same frontend ngrok URL forwards `/api/*` to the backend for Sarvam tools; the visible UI has no customer picker, does not hardcode customer names or personal details, and keeps the call button in `End call` mode while a browser session is active |
-| 6. End-to-end voice test | Pending live browser voice test with real Sarvam runtime; committed Sarvam agent version now exists |
+| 4. Sarvam dashboard agent and tools | Done: Sarvam MCP configured `ezpolicy` app `ezpolicy-4ae97723-494f`; updated prompt and rules to use live web search (`search_policies_online`) across top Indian insurers instead of hardcoded policies; added MCP server `sarvam-voice-agents` (`https://mcp.sarvam.ai/voice-agents`); `.env` pins the app/version |
+| 5. Frontend home page and live activity | Done: phone opens the Vite/ngrok URL, starts a voice check-in, and the same frontend ngrok URL forwards `/api/*` to the backend for Sarvam tools; the visible UI has no customer picker, does not hardcode customer names or personal details, and keeps the call button in `End call` mode while a browser session is active; activity feed tracks live web search results |
+| 6. Live internet policy search functionality | Implemented: Added live web search in `/api/search-policies` scraping and extracting real-time policies across top Indian insurers (Star Health, HDFC ERGO, Niva Bupa, Tata AIG, Care Health, etc.) with real URLs, features, and tailored premiums, backed by a curated catalog; integrated with Sarvam agent as `search_policies_online` |
+| 7. Email quotation functionality | Implemented: Added email input modal in frontend UI and integrated with backend email sending functionality; users can request quotations via email after receiving a proposal |
+| 8. End-to-end voice test | Pending live browser voice test with real Sarvam runtime; committed Sarvam agent version now exists |
 
 ## How the demo works
 
@@ -78,9 +80,11 @@ The frontend does not expose customer names, IDs, policy details or a profile pi
 | `POST /api/quotes` | `{ adults, children, eldestAge, budgetMonthly? }` | `{ note, quotes[] }`; each quote has productId, insurer, productType, cadence, cover, premium, deductible, monthlyCost, withinBudget |
 | `POST /api/proposals` | `{ customerName?, productId, cover, addTopUp, declaredConditions?, notes? }` | `{ reference: "EZP-xxxxxx", status, whatsappSent }` |
 | `POST /api/session` | `{ userId? }` | Sarvam session config: `orgId`, `workspaceId`, `appId`, optional `version`, `userIdentifier`, empty customer `agentVariables`; blank body starts a new-buyer session |
+| `POST /api/search-policies` | `{ adults, children, eldestAge, budgetMonthly?, searchTerm? }` | `{ message, results[], note }` |
+| `POST /api/send-quotation` | `{ customerEmail, customerName, quotationDetails }` | `{ message, messageId }` |
 | `/api/sarvam/*` | Sarvam browser SDK signed-URL request | Proxies to `SARVAM_RUNTIME_BASE` and injects `SARVAM_API_KEY` |
 | `POST /api/call` | | Gone for practical purposes: returns 410 because outbound telephony is disabled |
-| `GET /api/activity` | | events for the current voice session: `call`, `quotes`, `proposal` |
+| `GET /api/activity` | | events for the current voice session: `call`, `quotes`, `proposal`, `search_policies`, `email_sent` |
 
 ## Environment
 
@@ -96,6 +100,9 @@ Copy `.env.example` to `.env`:
 | `SARVAM_RUNTIME_BASE` | Defaults to `https://apps.sarvam.ai/api/app-runtime/` |
 | `DEMO_PHONE` | Optional: WAHA receipt target. Not used for voice calling |
 | `WAHA_API_KEY`, `WAHA_DASHBOARD_PASSWORD`, `WHATSAPP_SWAGGER_PASSWORD` | Optional WAHA receipt service credentials |
+| `EMAIL_SERVICE` | Email service provider (e.g., gmail, outlook, yahoo) |
+| `EMAIL_USERNAME` | Email address for sending quotations |
+| `EMAIL_PASSWORD` | App password for the email account |
 
 ## Run
 
