@@ -1,97 +1,115 @@
-# ezpolicy: ElevenLabs agent + phone setup (copy-paste)
+# ezpolicy: Sarvam AI voice-agent setup
 
-Order: Twilio → ElevenLabs agent → link number → tunnel + `.env` → test call.
+The demo voice path is browser-on-phone, not outbound telephony:
 
-## 1. Twilio (about 5 min)
+```text
+Phone browser -> Vite app over HTTPS/ngrok -> Sarvam browser SDK -> Sarvam Voice Agent
+Sarvam API tools -> ngrok backend -> /api/customer, /api/quotes, /api/proposals
+```
 
-1. Sign up at twilio.com. A trial works; upgrading with $20 removes the trial message and the "verified numbers only" limit.
-2. Console → Phone Numbers → Verified Caller IDs → add and verify **your own phone** (trial accounts can only call verified numbers).
-3. Console → Phone Numbers → Buy a number → any US number with Voice.
-4. Console → Voice → Settings → Geo permissions → tick **India** → Save.
-5. Keep the **Account SID** and **Auth Token** (Console home) open for step 3.
+Do not spend more time on PSTN or WhatsApp calling. They are account/provider problems, not app logic problems.
 
-## 2. ElevenLabs agent (about 10 min)
+## 1. Create the Sarvam agent
 
-1. Sign up at elevenlabs.io and add a payment method.
-2. Agents → Create agent → Blank. Name: `ezpolicy`.
-3. **First message** (if you pick a male voice, change "bol rahi" to "bol raha"):
+1. Open the Sarvam Voice Agents dashboard.
+2. Create an agent named `ezpolicy`.
+3. Enable Hindi and English.
+4. Use an Indian-language voice suitable for Hinglish.
+5. Paste the system prompt below.
+6. Add the rules sheet below as knowledge/instructions.
+7. Commit/publish the agent version.
+8. Copy these values into `.env`:
 
-   > Namaste {{customer_name}} ji, main ezpolicy se bol rahi hoon, aapke health cover ke baare mein. Aapka cover cycle {{cycle_end}} ko khatam ho raha hai — kya do minute baat kar sakte hain?
+```env
+SARVAM_API_KEY=
+SARVAM_ORG_ID=
+SARVAM_WORKSPACE_ID=
+SARVAM_APP_ID=
+SARVAM_AGENT_VERSION=
+```
 
-4. **System prompt:** paste the block in "System prompt" below.
-5. **Language:** English. Additional languages: Hindi. System tools: turn on **Detect language** and **End call**.
-6. **Voice:** any stock voice (rules: no cloned voices).
-7. **Knowledge base** → Add text → paste the block in "Rules sheet" below.
-8. **Tools** → Add tool → Webhook, twice (URL comes from step 4; update it whenever ngrok restarts):
+`SARVAM_AGENT_VERSION` is optional. Leave it blank to use the latest committed agent version.
 
-   **`get_quotes`** · POST · `https://<your-ngrok-url>/api/quotes`
-   Description: `Returns real premiums from the price table for a family, sorted by monthly cost. Call this before saying any price.`
-   Body parameters:
-   | name | type | required | description |
-   |---|---|---|---|
-   | adults | number | yes | Adults to cover (1 or 2) |
-   | children | number | yes | Children to cover (0 to 2) |
-   | eldestAge | number | yes | Age of the eldest person covered |
-   | budgetMonthly | number | no | Comfortable monthly amount in rupees |
+## 2. Configure API tools
 
-   **`submit_proposal`** · POST · `https://<your-ngrok-url>/api/proposals`
-   Description: `Submits the plan the customer agreed to. Only call after the customer clearly says yes.`
-   Body parameters:
-   | name | type | required | description |
-   |---|---|---|---|
-   | productId | string | yes | productId of the chosen plan, from get_quotes |
-   | cover | number | yes | Cover amount in rupees of the chosen plan |
-   | addTopUp | boolean | yes | True if adding the Care Health super top-up |
-   | declaredConditions | string | no | Any new health conditions the customer mentioned |
-   | notes | string | no | One-line summary of what was agreed |
+Expose the backend:
 
-   Add header `ngrok-skip-browser-warning: true` to both tools.
-9. For test calls inside the dashboard, give the dynamic variables sample values (e.g. `customer_name` = Abhishek Chopra, `cycle_end` = 15 October, `today` = 2026-10-14, `customer_profile` = output of `curl localhost:5001/api/customer/1590824686249448`).
-10. Save and copy the **agent ID**.
+```bash
+ngrok http 5001
+```
 
-## 3. Link the phone number
+Create these API tools in Sarvam. Use the ngrok HTTPS URL as the base URL.
 
-- ElevenLabs → Phone Numbers → Import number → Twilio → paste the number, Account SID and Auth Token → assign agent `ezpolicy`. Copy the **phone number ID**.
-- ElevenLabs → profile → API keys → create one. Copy the **API key**.
+### `get_customer`
 
-## 4. Tunnel, `.env`, test call
+- Method: `GET`
+- URL: `https://<backend-ngrok-url>/api/customer/active`
+- Description: `Loads the records of the customer in the current browser voice session: name, today's date, family members with declared conditions, and current policy. Call this first.`
 
-1. `ngrok http 5001` → copy the `https://…` URL into both tool URLs.
-2. Fill in `.env`: `ELEVENLABS_API_KEY`, `ELEVENLABS_AGENT_ID`, `ELEVENLABS_PHONE_NUMBER_ID`, `DEMO_PHONE` (your number, e.g. `+9198XXXXXXXX`).
-3. Restart the backend so it reads `.env`: `docker compose up -d --force-recreate backend`.
-4. Ring yourself:
+This prototype keeps one active browser session in memory. If you need concurrent demos, switch the tool to `GET /api/customer/:userId` and pass `agent_variables.user_id`.
 
-   ```bash
-   curl -X POST localhost:5001/api/call -H 'content-type: application/json' -d '{"userId":"1590824686249448"}'
-   ```
+### `get_quotes`
 
-   Backup customer: `1706244642983364` (Lalit Deshpande).
+- Method: `POST`
+- URL: `https://<backend-ngrok-url>/api/quotes`
+- Description: `Returns real premiums from the price table for a family, sorted by monthly cost. Call this before saying any price.`
 
----
+Body schema:
+
+| name | type | required | description |
+| --- | --- | --- | --- |
+| `adults` | number | yes | Adults to cover, 1 or 2 |
+| `children` | number | yes | Children to cover, 0 to 2 |
+| `eldestAge` | number | yes | Age of the eldest covered person |
+| `budgetMonthly` | number | no | Comfortable monthly amount in rupees |
+
+### `submit_proposal`
+
+- Method: `POST`
+- URL: `https://<backend-ngrok-url>/api/proposals`
+- Description: `Submits the plan the customer agreed to. Only call after the customer clearly says yes.`
+
+Body schema:
+
+| name | type | required | description |
+| --- | --- | --- | --- |
+| `productId` | string | yes | Product ID of the chosen plan from `get_quotes` |
+| `cover` | number | yes | Cover amount in rupees of the chosen plan |
+| `addTopUp` | boolean | yes | True if adding the Care Health super top-up |
+| `declaredConditions` | string | no | Any new health conditions the customer mentioned |
+| `notes` | string | no | One-line summary of what was agreed |
+
+## 3. Run the demo
+
+```bash
+python3 scripts/extract_insurance.py ~/Desktop/buildathon_data.zip
+pnpm start:dev
+ngrok http 5173
+```
+
+Open the Vite ngrok URL on the phone, tap **Talk to ezpolicy now**, allow the microphone, and speak in Hindi or English.
 
 ## System prompt
 
 ```text
-You are ezpolicy's voice assistant, a calm, friendly health-insurance guide for Indian families, on a phone call with {{customer_name}}. Today is {{today}}. You give guidance, not a sales pitch.
+You are ezpolicy's voice assistant, a calm, friendly health-insurance guide for Indian families, on a browser voice call with an ezpolicy customer. You give guidance, not a sales pitch.
 
 ## What you know about the customer
-Their policy records, the only facts you have about them:
-{{customer_profile}}
-Fields: members (name, relationship, age, conditions = declared pre-existing diseases, conditionsSince = year), adults, children, eldestAge, policies (insurer, productType, cadence daily or monthly, cover in rupees, premium per day or per month, cycleEnd).
+Before saying anything about their policy, call get_customer. Its result is the only set of facts you have about them: name, today (today's date), members (name, relationship, age, conditions = declared pre-existing diseases, conditionsSince = year), adults, children, eldestAge, policies (insurer, productType, cadence daily or monthly, cover in rupees, premium per day or per month, cycleEnd). If get_customer fails, say you can't open their records right now and that the ezpolicy team will follow up.
 
-## Why you are calling
-Their current 30-day cover cycle ends on {{cycle_end}}. Before the next cycle, check that their health cover still fits their family, health and budget, and fix it if not.
+## Why you are talking
+Their current 30-day cover cycle ends on the policy's cycleEnd. Before the next cycle, check that their health cover still fits their family, health and budget, and fix it if not.
 
 ## How to run the call
-1. Say in one line why you called and ask if they have two minutes.
+1. Call get_customer first. Greet them by first name with "ji" and say in one line that you're checking their cover before the next cycle.
 2. Ask at most three questions, one at a time: has anyone been newly diagnosed or hospitalised; any change in family (new child, parents to add); what monthly amount is comfortable.
 3. Call get_quotes with adults, children and eldestAge (from the profile or the updated family) and budgetMonthly. Recommend ONE option in at most two sentences: what to keep or add, its monthly cost, and why it fits them. If anyone has a declared condition, the default is to stay with the current insurer at the current cover. If the Care Health super top-up fits the budget and the base cover is at least its deductible, suggest adding it for much more cover at a small monthly cost. If the base cover is below the deductible, suggest raising the base cover first.
 4. If they ask about switching insurer or a cheaper plan, compare using get_quotes numbers. If anyone has a declared condition, explain: a fresh policy treats it as pre-existing (waiting period up to 3 years); porting keeps waiting-period credit, but the new insurer underwrites afresh and may decline or charge more. Weigh that against the saving.
 5. If a top-up's deductible is higher than their base cover, explain the gap: the family pays the bills between the base cover and the deductible.
-6. Say the final choice and its monthly cost out loud. Only after a clear yes, call submit_proposal. Read out the reference number, thank them and end the call.
+6. Say the final choice and its monthly cost out loud. Only after a clear yes, call submit_proposal. Read out the reference number; if whatsappSent is true, say the details are on their WhatsApp too. Thank them and end the call.
 
 ## Hard rules
-- Every price, cover amount and deductible you say must come from get_quotes or the profile. Never estimate or do arithmetic yourself; use monthlyCost.
+- Every price, cover amount and deductible you say must come from get_quotes or get_customer. Never estimate or do arithmetic yourself; use monthlyCost.
 - Prices from get_quotes are exact: say them exactly, never "about" or "lagbhag". If get_quotes fails or returns no quotes, say you can't fetch prices right now. Never guess a price.
 - After submit_proposal, read out the reference from its result.
 - Never predict illness or give medical advice. Don't promise what a policy covers beyond the rules sheet.

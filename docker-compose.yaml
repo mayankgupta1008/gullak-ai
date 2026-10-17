@@ -26,7 +26,6 @@ services:
       - "5001:5001"
 
   waha:
-    profiles: ["whatsapp"] # off by default (WhatsApp is on the handbook skip list); start with --profile whatsapp
     image: devlikeapro/waha:gows-arm # arm64 tag; on x86 use devlikeapro/waha:gows
     env_file: .env # WAHA_API_KEY, WAHA_DASHBOARD_PASSWORD, WHATSAPP_SWAGGER_PASSWORD
     environment:
@@ -37,7 +36,7 @@ services:
     volumes:
       - waha-sessions:/app/.sessions
     ports:
-      - "127.0.0.1:3000:3000" # localhost only: this port can read/send as the linked WhatsApp
+      - "127.0.0.1:3001:3000" # localhost only (host :3000 is taken): this port can read/send as the linked WhatsApp
 
 volumes:
   waha-sessions:

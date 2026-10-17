@@ -1,119 +1,135 @@
 # ezpolicy
 
-A voice agent that phones a family about their health insurance before their next cover cycle. It asks what changed (health, family, budget), recommends the right cover using real prices from the event dataset, and submits the change the customer agrees to.
+A browser voice agent that helps a family review health insurance before the next 30-day cover cycle. It asks what changed in health, family and budget, recommends cover using real event-dataset prices, and submits the proposal the customer agrees to.
 
-Built for the **Bachatt × Digia Voice AI Buildathon** (Fintech track), 17 Oct 2026, Gurugram.
-Deadlines: build ends **3:00 PM IST**; a basic working demo is submitted by **3:30 PM**; the final five demo live 4–6 PM.
+Built for the **Bachatt x Digia Voice AI Buildathon** (Fintech track), 17 Oct 2026, Gurugram.
 
-> **Agents picking this up in a new chat:** read this file first, then `docs/superpowers/specs/2026-10-17-ezpolicy-insurance-agent-design.md` (design and decisions) and `agent/setup.md` (agent prompt, tools, phone setup). The implementation plan in `docs/superpowers/plans/` predates the phone-call decision: where it says browser session or client tools, this README wins (Twilio call + webhook tools). **Update the Status table after every change.**
+> **Agents picking this up in a new chat:** read this file first, then `agent/setup.md`. The working voice path is Sarvam AI inside the web app opened on a phone over HTTPS. Do not revive outbound telephony unless the user explicitly asks; that path already burned time on provider setup. **Update the Status table after every change.**
 
 ## Status
 
 | Step | State |
 | --- | --- |
-| 1. Extract insurance data from the event zip | ✅ `scripts/extract_insurance.py` → `backend/data/insurance.json` |
-| 2. Backend API: customer, quotes, proposals | ✅ tested with curl, typecheck passes |
-| 3. `POST /api/call` (ElevenLabs outbound call via Twilio) + activity log | ✅ code tested; returns 502 until the `.env` keys are set |
-| 4. ElevenLabs agent + Twilio number + ngrok (manual, see `agent/setup.md`) | ⏳ in progress (user) |
-| 5. Frontend home page (teammate): responsive ezpolicy design, Hindi/English interactive preview, cover explorer, FAQs, customer picker, demo call and live activity; Vite `/api` proxy | ✅ production build passes. Root `pnpm dev` runs the home page without `.env`; `.env.example` documents voice credentials; Docker proxy targets the backend service |
-| 6. End-to-end test call (Hindi + English), backup video, submit | ⏳ |
+| 1. Extract insurance data from the event zip | Done: `scripts/extract_insurance.py` writes `backend/data/insurance.json` |
+| 2. Backend API: customer, quotes, proposals, activity | Done: implemented in `backend/src/index.ts`; quote/proposal logic kept provider-neutral |
+| 3. Sarvam browser voice integration | Done in code: `frontend/src/BrowserCall.tsx` uses `sarvam-conv-ai-sdk/browser`; `POST /api/session` returns non-secret Sarvam session config; `/api/sarvam/*` proxies signed-URL requests with `SARVAM_API_KEY` server-side |
+| 4. Sarvam dashboard agent and tools | Pending user setup: create agent, paste prompt/rules from `agent/setup.md`, configure `get_customer`, `get_quotes`, `submit_proposal`, then paste Sarvam IDs into `.env` |
+| 5. Frontend home page and live activity | Done: phone opens the Vite/ngrok URL, taps "Talk to ezpolicy now", and `GET /api/activity` shows tool activity |
+| 6. End-to-end voice test | Pending real Sarvam credentials and a committed Sarvam agent version |
 
 ## How the demo works
 
-1. The page shows a demo customer and a **Call** button.
-2. `POST /api/call`: the backend asks ElevenLabs to dial `DEMO_PHONE` (our own phone) from the Twilio number imported into ElevenLabs, passing the customer's profile as dynamic variables.
-3. The ElevenLabs agent "ezpolicy" (Hindi or English) runs a two-minute **cycle check-in**: new diagnoses, family changes, budget.
-4. During the call it uses webhook tools on our backend through an ngrok HTTPS tunnel:
-   - `get_quotes` → `POST /api/quotes` (real premiums from the rate cards)
-   - `submit_proposal` → `POST /api/proposals` (returns a `EZP-xxxxxx` reference)
-5. The page polls `GET /api/activity` and shows the quotes and the proposal reference live.
+1. The page shows a demo customer picker.
+2. The phone opens the app through HTTPS, usually `ngrok http 5173`.
+3. Tapping **Talk to ezpolicy now** calls `POST /api/session`; the backend selects the active customer and returns Sarvam org/workspace/app IDs, never the API key.
+4. The Sarvam browser SDK requests a signed WebSocket URL through `/api/sarvam/*`; the backend forwards to Sarvam and injects `SARVAM_API_KEY`.
+5. The Sarvam agent talks in Hindi or English and calls backend API tools through the backend ngrok URL:
+   - `get_customer` -> `GET /api/customer/active`
+   - `get_quotes` -> `POST /api/quotes`
+   - `submit_proposal` -> `POST /api/proposals`
+6. The page polls `GET /api/activity` and shows quote/proposal activity live.
 
 ```text
-Browser (Vite :5173) ── POST /api/call ──► Express backend (:5001) ──► ElevenLabs outbound-call API ──► Twilio ──► phone
-        ▲                                        ▲
-        └──── GET /api/activity (polling) ───────┤
-                                                 └── ngrok HTTPS ◄── ElevenLabs agent webhook tools (get_quotes, submit_proposal)
+Phone browser (Vite :5173 over HTTPS)
+  -> /api/session
+  -> Sarvam browser SDK
+  -> /api/sarvam/* proxy -> Sarvam signed WebSocket
+
+Sarvam API tools
+  -> backend ngrok URL
+  -> /api/customer/active, /api/quotes, /api/proposals
 ```
 
-## Repo layout
+## Repo Layout
 
 | Path | What |
 | --- | --- |
-| `backend/src/index.ts` | All API routes (Express 5 on Node 24 native TypeScript) |
+| `backend/src/index.ts` | Express 5 API, Sarvam session config, Sarvam proxy, customer/quote/proposal/activity routes |
 | `backend/data/insurance.json` | Extracted dataset; gitignored, rebuild with the script |
 | `scripts/extract_insurance.py` | Reads the event zip, writes `insurance.json`, self-checks prices |
-| `agent/setup.md` | ElevenLabs agent prompt, rules sheet, tool definitions, Twilio and ngrok steps |
-| `frontend/` | React 19 + Vite 8 ezpolicy home page and demo call controls (`src/App.tsx` calls `/api/call`, polls `/api/activity`) |
-| `frontend/vite.config.ts` | Proxies `/api` to `API_PROXY_TARGET` (compose sets `http://backend:5001`; default `http://127.0.0.1:5001`) |
-| `docs/superpowers/plans/2026-10-17-ezpolicy-implementation-plan.md` | Earlier plan for a browser-only call with client tools; superseded by the phone flow in this README |
-| `docs/superpowers/specs/2026-10-17-ezpolicy-insurance-agent-design.md` | Design doc and decisions |
-| `docker-compose.yaml` | `frontend`, `backend`; `waha` (WhatsApp) sits behind the `whatsapp` profile, off by default (handbook skip list) |
+| `agent/setup.md` | Sarvam dashboard setup, prompt, rules sheet, API tool definitions |
+| `frontend/src/BrowserCall.tsx` | Sarvam browser voice session |
+| `frontend/src/App.tsx` | ezpolicy landing/demo page and live activity panel |
+| `frontend/vite.config.ts` | Proxies `/api` to the backend and allows ngrok hosts |
+| `docker-compose.yaml` | `frontend` :5173, `backend` :5001, optional WAHA receipt service |
 
 ## Data
 
-Source: `~/Desktop/buildathon_data.zip` → `buildathon/insurance/*.csv` (event mock data; never commit it).
+Source: `~/Desktop/buildathon_data.zip` -> `buildathon/insurance/*.csv` (event mock data; never commit it).
 Tables used: `insurance_products`, `premium_rate_cards`, `policies`, `applications`, `policy_members`.
 
-- 3 plans: Care Health base cover (billed daily; ₹1/3/5 lakh), ICICI Lombard base cover (monthly; ₹1/3/5 lakh), Care Health super top-up (monthly; ₹10 lakh with a ₹5 lakh deductible).
-- 282 rate-card rows (price by cover × adults × children × eldest-age band); 586 active customers.
+- 3 plans: Care Health base cover (billed daily; Rs 1/3/5 lakh), ICICI Lombard base cover (monthly; Rs 1/3/5 lakh), Care Health super top-up (monthly; Rs 10 lakh with a Rs 5 lakh deductible).
+- 282 rate-card rows (price by cover x adults x children x eldest-age band); 586 active customers.
 - "Today" in the data is **2026-10-14**; member ages are computed as of that date.
 - Self-check: 583 of 586 active policies reproduce their actual premium from the rate card.
 
 Demo customers:
 
-- `1590824686249448` **Abhishek Chopra** (primary): self 33, spouse Payal 32 (diabetes and heart surgery since 2010). Care ₹5L at ₹41/day = ₹1,230/month. ICICI ₹5L is ₹1,206/month; the ₹10L top-up is ₹275/month.
-- `1706244642983364` **Lalit Deshpande** (backup): family of 4; self 46 (heart surgery and organ replacement since 2010). Care ₹1L at ₹70/day, which is below the top-up's ₹5L deductible.
+- `1590824686249448` **Abhishek Chopra**: self 33, spouse Payal 32 (diabetes and heart surgery since 2010). Care Rs 5L at Rs 41/day = Rs 1,230/month. ICICI Rs 5L is Rs 1,206/month; the Rs 10L top-up is Rs 275/month.
+- `1706244642983364` **Lalit Deshpande**: family of 4; self 46 (heart surgery and organ replacement since 2010). Care Rs 1L at Rs 70/day, which is below the top-up's Rs 5L deductible.
 
 ## API
 
 | Route | Body | Returns |
 | --- | --- | --- |
 | `GET /api/health` | | `{ status }` |
-| `GET /api/customer/:userId` | | profile: members (age, conditions, conditionsSince), adults, children, eldestAge, policies, today |
-| `POST /api/quotes` | `{ adults, children, eldestAge, budgetMonthly? }` (numbers or numeric strings) | `{ note, quotes[] }`; each quote has productId, insurer, productType, cadence, cover, premium, deductible, monthlyCost (daily × 30), withinBudget; sorted by monthlyCost |
-| `POST /api/proposals` | `{ userId?, productId, cover, addTopUp, declaredConditions?, notes? }`; userId defaults to the active call's customer | `{ reference: "EZP-xxxxxx", status }` |
-| `POST /api/call` | `{ userId }` | ElevenLabs response (`conversation_id`, …); 502 with ElevenLabs' error if the call fails |
-| `GET /api/activity` | | events for the current call: `call`, `quotes`, `proposal` |
+| `GET /api/customer/:userId` | | profile: members, adults, children, eldestAge, policies, today |
+| `GET /api/customer/active` | | profile for the current browser voice session; defaults to Abhishek |
+| `POST /api/quotes` | `{ adults, children, eldestAge, budgetMonthly? }` | `{ note, quotes[] }`; each quote has productId, insurer, productType, cadence, cover, premium, deductible, monthlyCost, withinBudget |
+| `POST /api/proposals` | `{ userId?, productId, cover, addTopUp, declaredConditions?, notes? }` | `{ reference: "EZP-xxxxxx", status, whatsappSent }` |
+| `POST /api/session` | `{ userId }` | Sarvam session config: `orgId`, `workspaceId`, `appId`, optional `version`, `userIdentifier`, `agentVariables` |
+| `/api/sarvam/*` | Sarvam browser SDK signed-URL request | Proxies to `SARVAM_RUNTIME_BASE` and injects `SARVAM_API_KEY` |
+| `POST /api/call` | | Gone for practical purposes: returns 410 because outbound telephony is disabled |
+| `GET /api/activity` | | events for the current voice session: `call`, `quotes`, `proposal` |
 
-## Environment (`.env`, gitignored)
+## Environment
+
+Copy `.env.example` to `.env`:
 
 | Key | Meaning |
 | --- | --- |
-| `ELEVENLABS_API_KEY` | ElevenLabs API key |
-| `ELEVENLABS_AGENT_ID` | ID of the agent "ezpolicy" |
-| `ELEVENLABS_PHONE_NUMBER_ID` | ID of the Twilio number imported into ElevenLabs |
-| `DEMO_PHONE` | Our own phone in E.164 (`+91…`); the only number `/api/call` ever dials |
-| `WAHA_*` | Unused WhatsApp service |
+| `SARVAM_API_KEY` | Sarvam API key. Server-side only. Never expose it in `VITE_*` |
+| `SARVAM_ORG_ID` | Sarvam organization ID |
+| `SARVAM_WORKSPACE_ID` | Sarvam workspace ID |
+| `SARVAM_APP_ID` | Sarvam Voice Agent app ID |
+| `SARVAM_AGENT_VERSION` | Optional committed agent version; blank means latest committed version |
+| `SARVAM_RUNTIME_BASE` | Defaults to `https://apps.sarvam.ai/api/app-runtime/` |
+| `DEMO_PHONE` | Optional: WAHA receipt target. Not used for voice calling |
+| `WAHA_API_KEY`, `WAHA_DASHBOARD_PASSWORD`, `WHATSAPP_SWAGGER_PASSWORD` | Optional WAHA receipt service credentials |
 
 ## Run
 
-To view the home page, run these commands from `ezpolicy/`:
-
 ```bash
 pnpm install
-pnpm dev
+python3 scripts/extract_insurance.py ~/Desktop/buildathon_data.zip
+pnpm start:dev
+ngrok http 5173
 ```
 
-Open `http://localhost:5173`. This runs the frontend without Docker or `.env`. The language/topic preview, cover explorer, and FAQs work without the backend. Real demo calls and activity need the configured backend.
+Open the Vite ngrok URL on the phone. Microphone access requires HTTPS; localhost is only enough for laptop testing.
 
-For the full Docker voice-call demo, first copy `.env.example` to `.env` and fill in the ElevenLabs IDs, API key and demo phone. Extract the event dataset before starting the backend:
+For Sarvam API tools, expose the backend too:
 
 ```bash
-python3 scripts/extract_insurance.py ~/Desktop/buildathon_data.zip   # once: writes backend/data/insurance.json
-pnpm start:dev                                                       # docker compose: frontend :5173, backend :5001
-ngrok http 5001                                                      # put the https URL into both ElevenLabs tools
-curl -X POST localhost:5001/api/call -H 'content-type: application/json' -d '{"userId":"1590824686249448"}'
+ngrok http 5001
 ```
 
-After editing `.env`, run `docker compose up -d --force-recreate backend`.
+Paste that backend HTTPS URL into the Sarvam API tools defined in `agent/setup.md`.
 
-## Rules for anyone changing this
+After editing `.env`, run:
 
-- **Medical (health) insurance only.** No term or life insurance. No HDFC or other insurers (no prices in the data).
-- **Nothing made up:** every price, cover and deductible the agent says comes from `get_quotes` or the profile; the LLM never does arithmetic.
-- **Never say "renewal":** policies run on 30-day AutoPay cycles, so the call is a "cycle check-in".
+```bash
+docker compose up -d --force-recreate backend
+```
+
+## Rules For Changing This
+
+- Medical health insurance only. No term/life insurance. No HDFC or other insurers because there are no prices in the data.
+- Every price, cover and deductible the agent says must come from `get_quotes` or the customer profile.
+- Never say "renewal": policies run on 30-day AutoPay cycles, so this is a "cycle check-in".
 - The agent never predicts illness or gives medical advice.
-- Prototype: no auth, in-memory state, one call at a time. Keep `/api/call` dialling only `DEMO_PHONE`.
-- Backend is Node 24 native TypeScript: relative imports need the `.ts` extension; erasable syntax only (no enums or namespaces). `pnpm -F backend typecheck` must pass.
-- `pnpm -F frontend lint` is broken on TypeScript 7; ignore it.
-- Handbook skip list: real bank APIs, logins, WhatsApp, dashboards.
+- Prototype state is in memory and supports one active voice session at a time.
+- Backend is Node 24 native TypeScript: relative imports need `.ts` extensions; erasable syntax only.
+- `pnpm -F backend typecheck` and `pnpm -F frontend build` should pass.
+- `pnpm -F frontend lint` is known broken on TypeScript 7.
+- WAHA is only for optional receipt messages. Do not use it for calls.

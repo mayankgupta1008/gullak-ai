@@ -6,6 +6,7 @@ export default defineConfig({
   plugins: [react()],
   server: {
     host: "0.0.0.0",
+    allowedHosts: [".ngrok-free.dev"], // phones open the app through the ngrok tunnel
     proxy: { "/api": process.env.API_PROXY_TARGET || "http://127.0.0.1:5001" },
   },
 })

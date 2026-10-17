@@ -1,5 +1,6 @@
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useState } from 'react'
 import './App.css'
+import { BrowserCall } from './BrowserCall'
 
 type Topic = 'family' | 'health' | 'budget'
 type Language = 'en' | 'hi'
@@ -34,11 +35,9 @@ function App() {
   const [product, setProduct] = useState(0)
   const [stage, setStage] = useState(0)
   const [customer, setCustomer] = useState('1590824686249448')
-  const [callState, setCallState] = useState<'idle' | 'pending' | 'started' | 'error'>('idle')
-  const [error, setError] = useState('')
+  const [callState, setCallState] = useState<'idle' | 'started'>('idle')
   const [events, setEvents] = useState<Activity[]>([])
   const [activityError, setActivityError] = useState(false)
-  const busy = useRef(false)
   useEffect(() => {
     const observer = new IntersectionObserver(entries => entries.forEach(entry => {
       if (entry.isIntersecting) { entry.target.classList.add('arrived'); observer.unobserve(entry.target) }
@@ -62,17 +61,6 @@ function App() {
     const timer = window.setInterval(() => void poll(), 3000)
     return () => { controller.abort(); window.clearInterval(timer) }
   }, [callState])
-  async function startCall() {
-    if (busy.current) return
-    busy.current = true; setCallState('pending'); setError(''); setEvents([])
-    try {
-      const response = await fetch('/api/call', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ userId: customer }), signal: AbortSignal.timeout(30000) })
-      const result = await response.json().catch(() => null)
-      if (!response.ok || !result || (!result.conversation_id && result.success !== true)) throw new Error('The demo call could not start. Check that the backend and phone integration are configured, then try again.')
-      setCallState('started')
-    } catch (err) { setCallState('error'); setError(err instanceof Error ? err.message : 'The call could not start. Please try again.') }
-    finally { busy.current = false }
-  }
   return (
     <>
       <a className="skip-link" href="#main">Skip to content</a>
@@ -124,7 +112,7 @@ function App() {
           </div>
         </section>
         <section className="faq-section section" id="questions" aria-labelledby="faq-title"><div className="faq-heading"><h2 id="faq-title" data-reveal>Before<br />we talk.</h2><p data-reveal>A few things you<br />might want to know.</p></div><div className="faq-list">{faqs.map(([question, answer]) => <details key={question} name="questions" data-reveal><summary>{question}<span aria-hidden="true" className="faq-plus">+</span></summary><p>{answer}</p></details>)}</div></section>
-        <section className="checkin-section section" id="check-in" aria-labelledby="checkin-title"><div className="closing-copy"><h2 id="checkin-title" data-reveal>Your next<br />check-in.</h2><p data-reveal>A familiar voice.<br />A little more clarity about your cover.</p><a href="#preview" className="text-link" data-reveal>Explore the conversation preview</a></div><form className="call-form" data-ui data-reveal onSubmit={event => { event.preventDefault(); void startCall() }}><div className="fragment-top"><span>Try the voice agent</span><Mark /></div><h3>Let’s start with you.</h3><p>Choose an event-demo profile for the call.</p><label htmlFor="customer">Demo customer</label><select id="customer" value={customer} disabled={callState === 'pending' || callState === 'started'} onChange={event => setCustomer(event.target.value)}><option value="1590824686249448">Abhishek Chopra</option><option value="1706244642983364">Lalit Deshpande</option></select><p className="form-note">The call goes only to the demo phone configured by the project owner.</p><button type="submit" className="button" disabled={callState === 'pending' || callState === 'started'}>{callState === 'pending' ? 'Starting your call…' : callState === 'started' ? 'Call requested' : 'Start demo call'}<Arrow /></button><div className="call-feedback" aria-live="polite">{callState === 'error' && <p role="alert">{error}</p>}{callState === 'started' && <><p>Your call was requested. Check the configured demo phone.</p><ul>{events.map((event, index) => <li key={index}>{event.type === 'proposal' ? `Proposal submitted: ${event.reference ?? 'reference pending'}` : event.type === 'quotes' ? `${event.quotes?.length ?? 0} cover options retrieved` : event.type === 'call' ? `Check-in started${event.customer ? ` for ${event.customer}` : ''}` : 'Check-in activity updated'}</li>)}</ul>{activityError && <p>Activity updates are unavailable. The phone call may still be in progress.</p>}<button type="button" className="text-link" onClick={() => setCallState('idle')}>Close call activity</button></>}</div></form></section>
+        <section className="checkin-section section" id="check-in" aria-labelledby="checkin-title"><div className="closing-copy"><h2 id="checkin-title" data-reveal>Your next<br />check-in.</h2><p data-reveal>A familiar voice.<br />A little more clarity about your cover.</p><a href="#preview" className="text-link" data-reveal>Explore the conversation preview</a></div><form className="call-form" data-ui data-reveal onSubmit={event => event.preventDefault()}><div className="fragment-top"><span>Try the voice agent</span><Mark /></div><h3>Let’s start with you.</h3><p>Choose an event-demo profile for the call.</p><label htmlFor="customer">Demo customer</label><select id="customer" value={customer} disabled={callState === 'started'} onChange={event => setCustomer(event.target.value)}><option value="1590824686249448">Abhishek Chopra</option><option value="1706244642983364">Lalit Deshpande</option></select><p className="form-note">Tap “Talk to ezpolicy now”, allow your microphone, and talk in Hindi or English.</p><BrowserCall userId={customer} onStarted={() => { setEvents([]); setCallState('started') }} /><div className="call-feedback" aria-live="polite">{callState === 'started' && <><p>Call in progress. What the agent does appears below.</p><ul>{events.map((event, index) => <li key={index}>{event.type === 'proposal' ? `Proposal submitted: ${event.reference ?? 'reference pending'}` : event.type === 'quotes' ? `${event.quotes?.length ?? 0} cover options retrieved` : event.type === 'call' ? `Check-in started${event.customer ? ` for ${event.customer}` : ''}` : 'Check-in activity updated'}</li>)}</ul>{activityError && <p>Activity updates are unavailable. The voice session may still be in progress.</p>}<button type="button" className="text-link" onClick={() => setCallState('idle')}>Close call activity</button></>}</div></form></section>
       </main>
       <footer><a className="brand" href="#"><Mark />ezpolicy.</a><span>Health cover, in your words.</span><a href="#questions">About this prototype</a><span>© {new Date().getFullYear()} ezpolicy</span></footer>
     </>
